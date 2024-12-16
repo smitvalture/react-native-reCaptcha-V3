@@ -3,7 +3,7 @@
     "compilerOptions": {
         "baseUrl": "./",
         "paths": {
-            "@valture/react-native-google-recaptcha-v3": [
+            "@valture/react-native-recaptcha-v3": [
                 "../src/index"
             ]
         }
