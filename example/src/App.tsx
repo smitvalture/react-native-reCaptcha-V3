@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { StyleSheet, View, Button, Text, SafeAreaView } from 'react-native';
-import ReCaptcha, { type GoogleRecaptchaRefAttributes } from 'react-native-google-recaptcha-v3';
+import ReCaptcha, { type GoogleRecaptchaRefAttributes } from '@valture/react-native-google-recaptcha-v3';
 
 export default function App() {
   const recaptchaRef = useRef<GoogleRecaptchaRefAttributes>(null);

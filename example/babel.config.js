@@ -5,7 +5,7 @@ module.exports = {
             'module-resolver',
             {
                 alias: {
-                    'react-native-google-recaptcha-v3': '../src/index'
+                    '@valture/react-native-google-recaptcha-v3': '../src/index'
                 }
             }
         ]

@@ -5,15 +5,15 @@ A React Native component that provides easy integration with Google reCAPTCHA v3
 ## Installation
 
 ```bash
-npm install react-native-google-recaptcha-v3 react-native-webview
+npm install @valture/react-native-google-recaptcha-v3 react-native-webview
 # or
-yarn add react-native-google-recaptcha-v3 react-native-webview
+yarn add @valture/react-native-google-recaptcha-v3 react-native-webview
 ```
 
 ## Usage
 
 ```typescript
-import ReCaptcha, { GoogleRecaptchaRefAttributes } from 'react-native-google-recaptcha-v3';
+import ReCaptcha, { GoogleRecaptchaRefAttributes } from '@valture/react-native-google-recaptcha-v3';
 import { useRef } from 'react';
 
 const YourComponent = () => {
