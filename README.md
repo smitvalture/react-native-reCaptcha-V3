@@ -68,7 +68,7 @@ const token = await recaptchaRef.current?.getToken('custom_action');
 ```typescript
 import React, { useRef } from 'react';
 import { Button, View } from 'react-native';
-import ReCaptcha, { GoogleRecaptchaRefAttributes } from 'react-native-google-recaptcha-v3';
+import ReCaptcha, { GoogleRecaptchaRefAttributes } from '@valture/react-native-google-recaptcha-v3';
 
 const App = () => {
   const recaptchaRef = useRef<GoogleRecaptchaRefAttributes>(null);
