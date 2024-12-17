@@ -114,6 +114,7 @@ const App = () => {
         baseUrl="https://your-domain.com"
         onVerify={(token) => console.log('Verified:', token)}
         onError={(error) => console.error('Error:', error)}
+        containerStyle={{position: 'absolute', backfaceVisibility: 'hidden', opacity: 0}}  // to make it invisible
       />
       <Button title="Submit" onPress={handleSubmit} />
     </View>
