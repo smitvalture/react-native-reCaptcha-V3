@@ -1,6 +1,6 @@
 {
   "name": "@valture/react-native-recaptcha-v3",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "React Native component for integrating Google reCAPTCHA v3, providing seamless bot protection for mobile applications.",
   "source": "./src/index.tsx",
   "main": "./lib/commonjs/index.js",
