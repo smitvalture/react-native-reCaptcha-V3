@@ -5,44 +5,29 @@
   "source": "./src/index.tsx",
   "main": "./lib/commonjs/index.js",
   "module": "./lib/module/index.js",
-  "types": "./lib/typescript/commonjs/src/index.d.ts",
+  "types": "./lib/typescript/commonjs/index.d.ts",
   "exports": {
     ".": {
       "import": {
-        "types": "./lib/typescript/module/src/index.d.ts",
-        "default": "./lib/module/index.js"
+        "types": "./lib/typescript/module/index.d.ts"
       },
       "require": {
-        "types": "./lib/typescript/commonjs/src/index.d.ts",
-        "default": "./lib/commonjs/index.js"
+        "types": "./lib/typescript/commonjs/index.d.ts"
       }
     }
   },
   "files": [
     "src",
     "lib",
-    "android",
-    "ios",
-    "cpp",
-    "*.podspec",
     "react-native.config.js",
-    "!ios/build",
-    "!android/build",
-    "!android/gradle",
-    "!android/gradlew",
-    "!android/gradlew.bat",
-    "!android/local.properties",
     "!**/__tests__",
-    "!**/__fixtures__",
     "!**/__mocks__",
     "!**/.*"
   ],
   "scripts": {
-    "example": "yarn workspace @valture/react-native-recaptcha-v3-example",
-    "test": "jest",
     "typecheck": "tsc",
     "lint": "eslint \"**/*.{js,ts,tsx}\"",
-    "clean": "del-cli android/build example/android/build example/android/app/build example/ios/build lib",
+    "clean": "del-cli android/build lib",
     "prepare": "bob build",
     "release": "release-it"
   },
@@ -56,7 +41,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/smitvalture/react-native-recaptcha-v3.git"
+    "url": "https://github.com/smitvalture/react-native-recaptcha-v3.git"
   },
   "author": "Smit Valture <smitvalture@gmail.com> (https://github.com/smitvalture)",
   "license": "MIT",
@@ -68,30 +53,20 @@
     "registry": "https://registry.npmjs.org/"
   },
   "devDependencies": {
-    "@commitlint/config-conventional": "^17.0.2",
-    "@evilmartians/lefthook": "^1.5.0",
     "@react-native-community/cli": "15.0.1",
-    "@react-native/eslint-config": "^0.73.1",
-    "@release-it/conventional-changelog": "^9.0.2",
-    "@testing-library/jest-native": "^5.4.3",
-    "@testing-library/react-native": "^12.9.0",
-    "@types/jest": "^29.5.14",
-    "@types/react": "^18.2.44",
+    "@release-it/conventional-changelog": "^9.0.3",
+    "@types/react": "^19.0.1",
     "@typescript-eslint/eslint-plugin": "^8.18.0",
     "@typescript-eslint/parser": "^8.18.0",
-    "commitlint": "^17.0.2",
-    "del-cli": "^5.1.0",
     "eslint": "^9.17.0",
     "eslint-config-prettier": "^9.0.0",
     "eslint-plugin-prettier": "^5.0.1",
-    "jest": "^29.7.0",
     "prettier": "^3.0.3",
     "react": "18.3.1",
     "react-native": "0.76.3",
     "react-native-builder-bob": "^0.33.3",
     "react-native-webview": "^13.12.4",
     "release-it": "^17.10.0",
-    "turbo": "^1.10.7",
     "typescript": "^5.7.2"
   },
   "resolutions": {
@@ -101,22 +76,6 @@
     "react": "*",
     "react-native": "*",
     "react-native-webview": ">=11.0.0"
-  },
-  "workspaces": [
-    "example"
-  ],
-  "packageManager": "yarn@3.6.1",
-  "jest": {
-    "preset": "react-native",
-    "modulePathIgnorePatterns": [
-      "<rootDir>/example/node_modules",
-      "<rootDir>/lib/"
-    ]
-  },
-  "commitlint": {
-    "extends": [
-      "@commitlint/config-conventional"
-    ]
   },
   "release-it": {
     "git": {
@@ -146,11 +105,9 @@
       "prettier/prettier": [
         "error",
         {
-          "quoteProps": "consistent",
           "singleQuote": true,
           "tabWidth": 2,
-          "trailingComma": "es5",
-          "useTabs": false
+          "trailingComma": "es5"
         }
       ]
     }
@@ -160,11 +117,9 @@
     "lib/"
   ],
   "prettier": {
-    "quoteProps": "consistent",
     "singleQuote": true,
     "tabWidth": 2,
-    "trailingComma": "es5",
-    "useTabs": false
+    "trailingComma": "es5"
   },
   "react-native-builder-bob": {
     "source": "src",
@@ -191,9 +146,5 @@
       ]
     ]
   },
-  "create-react-native-library": {
-    "type": "view-legacy",
-    "languages": "kotlin-objc",
-    "version": "0.44.3"
-  }
+  "packageManager": "yarn@1.22.22"
 }

@@ -1,4 +1,4 @@
-declare interface ReCaptchaProps {
+export declare interface ReCaptchaProps {
     siteKey: string;
     baseUrl: string;
     action?: string;
@@ -8,11 +8,11 @@ declare interface ReCaptchaProps {
     containerStyle?: any;
 }
 
-declare interface GoogleRecaptchaRefAttributes {
+export declare interface GoogleRecaptchaRefAttributes {
     getToken: (action?: string) => Promise<string | null>;
 }
 
-declare interface ReCaptchaMessage {
+export declare interface ReCaptchaMessage {
     type: 'VERIFY' | 'ERROR' | 'READY';
     token?: string;
     error?: string;

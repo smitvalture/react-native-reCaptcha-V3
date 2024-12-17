@@ -1,9 +1,7 @@
 import React, { forwardRef, useImperativeHandle } from 'react';
 import { StyleSheet } from 'react-native';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
-import type { GoogleRecaptchaRefAttributes, ReCaptchaProps, ReCaptchaMessage } from './types';
-
-export type { ReCaptchaProps, GoogleRecaptchaRefAttributes, ReCaptchaMessage };
+import type { GoogleRecaptchaRefAttributes, ReCaptchaMessage, ReCaptchaProps } from './types';
 
 const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
   ({ siteKey = 'dummy-site-key', baseUrl = 'https://example.com', action = 'submit', onVerify, onError, containerStyle, style }, ref) => {
@@ -68,7 +66,7 @@ const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
 
     const handleMessage = (event: WebViewMessageEvent) => {
       try {
-        const data = JSON.parse(event.nativeEvent.data);
+        const data: ReCaptchaMessage = JSON.parse(event.nativeEvent.data);
         if (data.type === 'VERIFY' && data.token) {
           onVerify?.(data.token);
           tokenPromiseRef.current?.resolve(data.token);

@@ -1,8 +1,9 @@
 {
   "compilerOptions": {
-    "rootDir": ".",
+    "rootDir": "src",
     "paths": {
-      "@valture/react-native-recaptcha-v3": ["./src/index"]
+      "@valture/react-native-recaptcha-v3": ["./src/index"],
+      "@valture/react-native-recaptcha-v3/types": ["./lib/typescript/commonjs/src/index.d.ts"]
     },
     "allowUnreachableCode": false,
     "allowUnusedLabels": false,
@@ -11,7 +12,7 @@
     "jsx": "react-jsx",
     "lib": ["ESNext"],
     "module": "ESNext",
-    "moduleResolution": "Bundler",
+    "moduleResolution": "node",
     "noEmit": true,
     "noFallthroughCasesInSwitch": true,
     "noImplicitReturns": true,
@@ -25,5 +26,9 @@
     "strict": true,
     "target": "ESNext",
     "verbatimModuleSyntax": true
-  }
+  },
+  "include": [
+    "src/**/*",
+    "lib/typescript/commonjs/src/**/*"
+  ]
 }
