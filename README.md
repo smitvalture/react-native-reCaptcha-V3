@@ -1,20 +1,33 @@
-# react-native-recaptcha-v3
+# **react-native-recaptcha-v3**
 
-A React Native component that provides easy integration with Google reCAPTCHA v3 for React Native applications.
+A React Native component for seamless integration of Google reCAPTCHA v3 into React Native applications.
 
-## Installation
+## **Installation**
+
+### Prerequisites  
+This library depends on `react-native-webview`. Ensure it’s already installed in your project. If not, install it along with the package:
 
 ```bash
+# Install both packages if WebView is not installed
 npm install @valture/react-native-recaptcha-v3 react-native-webview
 # or
 yarn add @valture/react-native-recaptcha-v3 react-native-webview
 ```
 
-## Usage
+If `react-native-webview` is already installed:  
+```bash
+npm install @valture/react-native-recaptcha-v3
+# or
+yarn add @valture/react-native-recaptcha-v3
+```
+
+---
+
+## **Usage**
 
 ```typescript
 import ReCaptcha, { GoogleRecaptchaRefAttributes } from '@valture/react-native-recaptcha-v3';
-import { useRef } from 'react';
+import React, { useRef } from 'react';
 
 const YourComponent = () => {
   const recaptchaRef = useRef<GoogleRecaptchaRefAttributes>(null);
@@ -41,29 +54,39 @@ const YourComponent = () => {
 };
 ```
 
-## Props
+---
 
-| Prop | Type | Required | Description |
-|------|------|----------|-------------|
-| siteKey | string | Yes | Your Google reCAPTCHA v3 site key |
-| baseUrl | string | Yes | Your domain URL (must match reCAPTCHA configuration) |
-| action | string | No | Custom action name (default: 'submit') |
-| onVerify | function | No | Callback function when verification succeeds |
-| onError | function | No | Callback function when verification fails |
-| style | ViewStyle | No | Custom styles for the WebView |
-| containerStyle | ViewStyle | No | Custom styles for the container |
+## **Props**
 
-## Methods
+| **Prop**       | **Type**   | **Required** | **Description**                                      |
+|-----------------|------------|--------------|------------------------------------------------------|
+| `siteKey`      | `string`   | **Yes**      | Your Google reCAPTCHA v3 site key.                  |
+| `baseUrl`      | `string`   | **Yes**      | Your domain URL (must match reCAPTCHA configuration).|
+| `action`       | `string`   | No           | Custom action name (default: `'submit'`).           |
+| `onVerify`     | `function` | No           | Callback function when verification succeeds.       |
+| `onError`      | `function` | No           | Callback function when verification fails.          |
+| `style`        | `ViewStyle`| No           | Custom styles for the WebView.                      |
+| `containerStyle`| `ViewStyle`| No          | Custom styles for the container.                    |
 
-### getToken(action?: string)
+---
 
-Get a new reCAPTCHA token. Returns a Promise that resolves with the token string.
+## **Methods**
+
+### **`getToken(action?: string): Promise<string | null>`**
+
+Retrieves a new reCAPTCHA token for the given action.  
+Returns a Promise that resolves with the token string.
+
+**Example:**
 
 ```typescript
 const token = await recaptchaRef.current?.getToken('custom_action');
+console.log('Token:', token);
 ```
 
-## Example
+---
+
+## **Full Example**
 
 ```typescript
 import React, { useRef } from 'react';
@@ -76,9 +99,10 @@ const App = () => {
   const handleSubmit = async () => {
     try {
       const token = await recaptchaRef.current?.getToken('login');
+      console.log('Token:', token);
       // Send token to your backend
     } catch (error) {
-      console.error(error);
+      console.error('reCAPTCHA error:', error);
     }
   };
 
@@ -88,8 +112,8 @@ const App = () => {
         ref={recaptchaRef}
         siteKey="your_site_key_here"
         baseUrl="https://your-domain.com"
-        onVerify={token => console.log('Verified:', token)}
-        onError={error => console.error('Error:', error)}
+        onVerify={(token) => console.log('Verified:', token)}
+        onError={(error) => console.error('Error:', error)}
       />
       <Button title="Submit" onPress={handleSubmit} />
     </View>
@@ -99,10 +123,21 @@ const App = () => {
 export default App;
 ```
 
-## License
+---
 
-MIT
+## **Troubleshooting**
 
-## Contributing
+- Ensure your `siteKey` matches the key configured on the Google reCAPTCHA Admin Console.
+- `baseUrl` should correspond to the domain registered with Google reCAPTCHA.
 
-See the [contributing guide](CONTRIBUTING.md) to learn how to contribute to the repository and the development workflow.
+---
+
+## **License**
+
+This project is licensed under the **MIT License**.
+
+---
+
+## **Contributing**
+
+We welcome contributions! Follow our [contributing guide](CONTRIBUTING.md) for instructions on how to contribute to this project.
