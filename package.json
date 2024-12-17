@@ -1,6 +1,6 @@
 {
   "name": "@valture/react-native-recaptcha-v3",
-  "version": "1.0.2",
+  "version": "1.0.4",
   "description": "React Native component for integrating Google reCAPTCHA v3, providing seamless bot protection for mobile applications.",
   "source": "./src/index.tsx",
   "main": "./lib/commonjs/index.js",
@@ -27,7 +27,7 @@
   "scripts": {
     "typecheck": "tsc",
     "lint": "eslint \"**/*.{js,ts,tsx}\"",
-    "clean": "del-cli android/build lib",
+    "clean": "del-cli lib",
     "prepare": "bob build",
     "release": "release-it"
   },
@@ -58,6 +58,7 @@
     "@types/react": "^19.0.1",
     "@typescript-eslint/eslint-plugin": "^8.18.0",
     "@typescript-eslint/parser": "^8.18.0",
+    "del-cli": "^6.0.0",
     "eslint": "^9.17.0",
     "eslint-config-prettier": "^9.0.0",
     "eslint-plugin-prettier": "^5.0.1",
