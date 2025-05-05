@@ -1,34 +1,31 @@
 {
   "compilerOptions": {
-    "rootDir": "src",
-    "paths": {
-      "@valture/react-native-recaptcha-v3": ["./src/index"],
-      "@valture/react-native-recaptcha-v3/types": ["./lib/typescript/commonjs/src/index.d.ts"]
-    },
-    "allowUnreachableCode": false,
-    "allowUnusedLabels": false,
+    "target": "es2017",
+    "module": "esnext",
+    "lib": ["es2017", "dom"],
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "outDir": "./lib/typescript",
+    "rootDir": "./src",
+    "strict": true,
+    "moduleResolution": "node",
+    "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
+    "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "jsx": "react-jsx",
-    "lib": ["ESNext"],
-    "module": "ESNext",
-    "moduleResolution": "node",
-    "noEmit": true,
-    "noFallthroughCasesInSwitch": true,
-    "noImplicitReturns": true,
-    "noImplicitUseStrict": false,
-    "noStrictGenericChecks": false,
-    "noUncheckedIndexedAccess": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "resolveJsonModule": true,
-    "skipLibCheck": true,
-    "strict": true,
-    "target": "ESNext",
-    "verbatimModuleSyntax": true
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "baseUrl": ".",
+    "paths": {
+      "*": ["node_modules/*"]
+    }
   },
-  "include": [
-    "src/**/*",
-    "lib/typescript/commonjs/src/**/*"
-  ]
+  "include": ["src"],
+  "exclude": ["node_modules", "lib", "**/__tests__/*", "**/__mocks__/*"]
 }
