@@ -1,5 +1,4 @@
 import { ViewStyle } from 'react-native';
-import { WebViewErrorEvent, WebViewHttpErrorEvent } from 'react-native-webview';
 
 export declare interface ReCaptchaProps {
     siteKey: string;
