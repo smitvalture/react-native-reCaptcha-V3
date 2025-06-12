@@ -40,11 +40,12 @@ const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
 
     const webViewRef = useRef<WebView>(null);
     const [isReady, setIsReady] = useState(false);
-    const tokenPromiseRef = useRef<{
+    
+    // Replace single tokenPromiseRef with a Map to track multiple promises
+    const tokenPromisesRef = useRef<Map<string, {
       resolve: (value: string | null) => void;
       reject: (reason?: any) => void;
-      action: string;
-    } | null>(null);
+    }>>(new Map());
 
     // Queue for token requests that come in before the reCAPTCHA is ready
     const pendingRequests = useRef<
@@ -56,14 +57,17 @@ const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
     >([]);
 
     // Store timeout IDs for cleanup
-    const timeoutIds = useRef<ReturnType<typeof setTimeout>[]>([]);
+    const timeoutIds = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
     const handleError = React.useCallback(
-      (error: string) => {
+      (error: string, action?: string) => {
         onError?.(error);
-        if (tokenPromiseRef.current) {
-          tokenPromiseRef.current.reject(new Error(error));
-          tokenPromiseRef.current = null;
+        if (action) {
+          const promise = tokenPromisesRef.current.get(action);
+          if (promise) {
+            promise.reject(new Error(error));
+            tokenPromisesRef.current.delete(action);
+          }
         }
       },
       [onError]
@@ -86,7 +90,8 @@ const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
           return;
         }
 
-        tokenPromiseRef.current = { resolve, reject, action: customAction };
+        // Store the promise in the Map
+        tokenPromisesRef.current.set(customAction, { resolve, reject });
 
         const jsToInject = `
         (function executeReCaptcha() {
@@ -159,14 +164,18 @@ const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
             },
             (index + 1) * 500
           ); // Stagger requests by 500ms
-          timeoutIds.current.push(timeoutId);
+          timeoutIds.current.set(request.action, timeoutId);
         });
       }
 
-      // Cleanup function: clear all timeouts on every cleanup
+      // Cleanup function: only clear timeouts for completed or failed requests
       return () => {
-        timeoutIds.current.forEach(clearTimeout);
-        timeoutIds.current = [];
+        timeoutIds.current.forEach((timeoutId, action) => {
+          if (!tokenPromisesRef.current.has(action)) {
+            clearTimeout(timeoutId);
+            timeoutIds.current.delete(action);
+          }
+        });
       };
     }, [isReady, executeReCaptcha]);
 
@@ -248,13 +257,22 @@ const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
           } else if (data.type === 'VERIFY' && data.token) {
             console.log('reCAPTCHA token received');
             onVerify?.(data.token);
-            if (tokenPromiseRef.current) {
-              tokenPromiseRef.current.resolve(data.token);
-              tokenPromiseRef.current = null;
+            if (data.action) {
+              const promise = tokenPromisesRef.current.get(data.action);
+              if (promise) {
+                promise.resolve(data.token);
+                tokenPromisesRef.current.delete(data.action);
+                // Clear the timeout for this action
+                const timeoutId = timeoutIds.current.get(data.action);
+                if (timeoutId) {
+                  clearTimeout(timeoutId);
+                  timeoutIds.current.delete(data.action);
+                }
+              }
             }
           } else if (data.type === 'ERROR') {
             console.warn('reCAPTCHA error:', data.error);
-            handleError(data.error || 'reCAPTCHA error');
+            handleError(data.error || 'reCAPTCHA error', data.action);
           }
         } catch (error) {
           console.error('Failed to parse WebView message:', error);
