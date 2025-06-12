@@ -1,19 +1,43 @@
-import React, { forwardRef, useImperativeHandle, useRef, useState, useEffect } from 'react';
+import React, {
+  forwardRef,
+  useImperativeHandle,
+  useRef,
+  useState,
+  useEffect,
+} from 'react';
 import { StyleSheet } from 'react-native';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
-import type { GoogleRecaptchaRefAttributes, ReCaptchaMessage, ReCaptchaProps, WebViewError, WebViewHttpError } from './types';
-export type { ReCaptchaProps, GoogleRecaptchaRefAttributes, ReCaptchaMessage } from './types';
+import type {
+  GoogleRecaptchaRefAttributes,
+  ReCaptchaMessage,
+  ReCaptchaProps,
+  WebViewError,
+  WebViewHttpError,
+} from './types';
+export type {
+  ReCaptchaProps,
+  GoogleRecaptchaRefAttributes,
+  ReCaptchaMessage,
+} from './types';
 
 const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
-  ({ 
-    siteKey = 'dummy-site-key', 
-    baseUrl = 'https://example.com', 
-    action = 'submit', 
-    onVerify, 
-    onError, 
-    containerStyle, 
-    style 
-  }, ref) => {
+  (
+    {
+      siteKey,
+      baseUrl = 'https://example.com',
+      action = 'submit',
+      onVerify,
+      onError,
+      containerStyle,
+      style,
+    },
+    ref
+  ) => {
+    // Validate required props
+    if (!siteKey) {
+      throw new Error('ReCaptchaV3: siteKey prop is required');
+    }
+
     const webViewRef = useRef<WebView>(null);
     const [isReady, setIsReady] = useState(false);
     const tokenPromiseRef = useRef<{
@@ -21,57 +45,50 @@ const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
       reject: (reason?: any) => void;
       action: string;
     } | null>(null);
-    
+
     // Queue for token requests that come in before the reCAPTCHA is ready
-    const pendingRequests = useRef<Array<{
-      action: string;
-      resolve: (value: string | null) => void;
-      reject: (reason?: any) => void;
-    }>>([]);
+    const pendingRequests = useRef<
+      Array<{
+        action: string;
+        resolve: (value: string | null) => void;
+        reject: (reason?: any) => void;
+      }>
+    >([]);
 
-    const handleError = React.useCallback((error: string) => {
-      onError?.(error);
-      if (tokenPromiseRef.current) {
-        tokenPromiseRef.current.reject(new Error(error));
-        tokenPromiseRef.current = null;
-      }
-    }, [onError]);
+    // Store timeout IDs for cleanup
+    const timeoutIds = useRef<ReturnType<typeof setTimeout>[]>([]);
 
-    // Handle the case when reCAPTCHA is ready
-    useEffect(() => {
-      if (isReady && pendingRequests.current.length > 0) {
-        console.log(`Processing ${pendingRequests.current.length} pending reCAPTCHA requests`);
-        
-        // Process all pending requests
-        const requests = [...pendingRequests.current];
-        pendingRequests.current = [];
-        
-        // Process the first request immediately
-        const firstRequest = requests.shift();
-        if (firstRequest) {
-          executeReCaptcha(firstRequest.action, firstRequest.resolve, firstRequest.reject);
+    const handleError = React.useCallback(
+      (error: string) => {
+        onError?.(error);
+        if (tokenPromiseRef.current) {
+          tokenPromiseRef.current.reject(new Error(error));
+          tokenPromiseRef.current = null;
         }
-        
-        // Queue the rest with a small delay to prevent overwhelming the WebView
-        requests.forEach((request, index) => {
-          setTimeout(() => {
-            executeReCaptcha(request.action, request.resolve, request.reject);
-          }, (index + 1) * 500); // Stagger requests by 500ms
-        });
-      }
-    }, [isReady]);
+      },
+      [onError]
+    );
 
     // Function to execute reCAPTCHA and get a token
-    const executeReCaptcha = (customAction: string, resolve: (value: string | null) => void, reject: (reason?: any) => void) => {
-      if (!isReady) {
-        console.warn('reCAPTCHA not ready yet, queueing request');
-        pendingRequests.current.push({ action: customAction, resolve, reject });
-        return;
-      }
-      
-      tokenPromiseRef.current = { resolve, reject, action: customAction };
-      
-      const jsToInject = `
+    const executeReCaptcha = React.useCallback(
+      (
+        customAction: string,
+        resolve: (value: string | null) => void,
+        reject: (reason?: any) => void
+      ) => {
+        if (!isReady) {
+          console.warn('reCAPTCHA not ready yet, queueing request');
+          pendingRequests.current.push({
+            action: customAction,
+            resolve,
+            reject,
+          });
+          return;
+        }
+
+        tokenPromiseRef.current = { resolve, reject, action: customAction };
+
+        const jsToInject = `
         (function executeReCaptcha() {
           try {
             if (window.grecaptcha && window.grecaptcha.execute) {
@@ -107,23 +124,69 @@ const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
           return true;
         })();
       `;
-      
-      webViewRef.current?.injectJavaScript(jsToInject);
-    };
 
-    useImperativeHandle(ref, () => ({
-      getToken: (customAction = action) => {
-        console.log("🚀 ~ useImperativeHandle ~ customAction:", customAction)
-        return new Promise((resolve, reject) => {
-          executeReCaptcha(customAction, resolve, reject);
-        });
+        webViewRef.current?.injectJavaScript(jsToInject);
       },
-      
-      // Add a new method to check if reCAPTCHA is ready
-      isReady: () => {
-        return isReady;
+      [isReady, siteKey]
+    );
+
+    // Handle the case when reCAPTCHA is ready
+    useEffect(() => {
+      if (isReady && pendingRequests.current.length > 0) {
+        console.log(
+          `Processing ${pendingRequests.current.length} pending reCAPTCHA requests`
+        );
+
+        // Process all pending requests
+        const requests = [...pendingRequests.current];
+        pendingRequests.current = [];
+
+        // Process the first request immediately
+        const firstRequest = requests.shift();
+        if (firstRequest) {
+          executeReCaptcha(
+            firstRequest.action,
+            firstRequest.resolve,
+            firstRequest.reject
+          );
+        }
+
+        // Queue the rest with a small delay to prevent overwhelming the WebView
+        requests.forEach((request, index) => {
+          const timeoutId = setTimeout(
+            () => {
+              executeReCaptcha(request.action, request.resolve, request.reject);
+            },
+            (index + 1) * 500
+          ); // Stagger requests by 500ms
+          timeoutIds.current.push(timeoutId);
+        });
       }
-    }), [siteKey, action, isReady]);
+
+      // Cleanup function
+      return () => {
+        timeoutIds.current.forEach(clearTimeout);
+        timeoutIds.current = [];
+      };
+    }, [isReady, executeReCaptcha]);
+
+    useImperativeHandle(
+      ref,
+      () => ({
+        getToken: (customAction = action) => {
+          console.log('🚀 ~ useImperativeHandle ~ customAction:', customAction);
+          return new Promise((resolve, reject) => {
+            executeReCaptcha(customAction, resolve, reject);
+          });
+        },
+
+        // Add a new method to check if reCAPTCHA is ready
+        isReady: () => {
+          return isReady;
+        },
+      }),
+      [siteKey, action, isReady, executeReCaptcha]
+    );
 
     const htmlContent = `
       <!DOCTYPE html>
@@ -174,48 +237,57 @@ const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
       </html>
     `;
 
-    const handleMessage = React.useCallback((event: WebViewMessageEvent) => {
-      try {
-        const data: ReCaptchaMessage = JSON.parse(event.nativeEvent.data);
-        
-        if (data.type === 'READY') {
-          console.log('reCAPTCHA is ready');
-          setIsReady(true);
-        } else if (data.type === 'VERIFY' && data.token) {
-          console.log('reCAPTCHA token received');
-          onVerify?.(data.token);
-          if (tokenPromiseRef.current) {
-            tokenPromiseRef.current.resolve(data.token);
-            tokenPromiseRef.current = null;
+    const handleMessage = React.useCallback(
+      (event: WebViewMessageEvent) => {
+        try {
+          const data: ReCaptchaMessage = JSON.parse(event.nativeEvent.data);
+
+          if (data.type === 'READY') {
+            console.log('reCAPTCHA is ready');
+            setIsReady(true);
+          } else if (data.type === 'VERIFY' && data.token) {
+            console.log('reCAPTCHA token received');
+            onVerify?.(data.token);
+            if (tokenPromiseRef.current) {
+              tokenPromiseRef.current.resolve(data.token);
+              tokenPromiseRef.current = null;
+            }
+          } else if (data.type === 'ERROR') {
+            console.warn('reCAPTCHA error:', data.error);
+            handleError(data.error || 'reCAPTCHA error');
           }
-        } else if (data.type === 'ERROR') {
-          console.warn('reCAPTCHA error:', data.error);
-          handleError(data.error || 'reCAPTCHA error');
+        } catch (error) {
+          console.error('Failed to parse WebView message:', error);
+          handleError('Failed to parse reCAPTCHA response');
         }
-      } catch (error) {
-        console.error('Failed to parse WebView message:', error);
-        handleError('Failed to parse reCAPTCHA response');
-      }
-    }, [onVerify, handleError]);
+      },
+      [onVerify, handleError]
+    );
 
-    const handleWebViewError = React.useCallback((syntheticEvent: { nativeEvent: WebViewError }) => {
-      const { nativeEvent } = syntheticEvent;
-      console.error('WebView error:', nativeEvent);
-      handleError(`WebView error: ${nativeEvent.description}`);
-    }, [handleError]);
+    const handleWebViewError = React.useCallback(
+      (syntheticEvent: { nativeEvent: WebViewError }) => {
+        const { nativeEvent } = syntheticEvent;
+        console.error('WebView error:', nativeEvent);
+        handleError(`WebView error: ${nativeEvent.description}`);
+      },
+      [handleError]
+    );
 
-    const handleWebViewHttpError = React.useCallback((syntheticEvent: { nativeEvent: WebViewHttpError }) => {
-      const { nativeEvent } = syntheticEvent;
-      console.error('WebView HTTP error:', nativeEvent);
-      handleError(`WebView HTTP error: ${nativeEvent.statusCode}`);
-    }, [handleError]);
+    const handleWebViewHttpError = React.useCallback(
+      (syntheticEvent: { nativeEvent: WebViewHttpError }) => {
+        const { nativeEvent } = syntheticEvent;
+        console.error('WebView HTTP error:', nativeEvent);
+        handleError(`WebView HTTP error: ${nativeEvent.statusCode}`);
+      },
+      [handleError]
+    );
 
     return (
       <WebView
         ref={webViewRef}
-        source={{ 
+        source={{
           html: htmlContent,
-          baseUrl
+          baseUrl,
         }}
         onMessage={handleMessage}
         javaScriptEnabled={true}
