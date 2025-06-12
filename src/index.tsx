@@ -127,7 +127,7 @@ const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
 
         webViewRef.current?.injectJavaScript(jsToInject);
       },
-      [isReady, siteKey]
+      [siteKey]
     );
 
     // Handle the case when reCAPTCHA is ready
@@ -163,10 +163,13 @@ const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
         });
       }
 
-      // Cleanup function
+      // Cleanup function: only clear timeouts if component unmounts, not on every dependency change
       return () => {
-        timeoutIds.current.forEach(clearTimeout);
-        timeoutIds.current = [];
+        // Only clear timeouts if isReady is false (i.e., on unmount)
+        if (!isReady) {
+          timeoutIds.current.forEach(clearTimeout);
+          timeoutIds.current = [];
+        }
       };
     }, [isReady, executeReCaptcha]);
 
