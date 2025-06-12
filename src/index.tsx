@@ -127,7 +127,7 @@ const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
 
         webViewRef.current?.injectJavaScript(jsToInject);
       },
-      [siteKey]
+      [siteKey, isReady]
     );
 
     // Handle the case when reCAPTCHA is ready
