@@ -163,13 +163,10 @@ const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
         });
       }
 
-      // Cleanup function: only clear timeouts if component unmounts, not on every dependency change
+      // Cleanup function: clear all timeouts on every cleanup
       return () => {
-        // Only clear timeouts if isReady is false (i.e., on unmount)
-        if (!isReady) {
-          timeoutIds.current.forEach(clearTimeout);
-          timeoutIds.current = [];
-        }
+        timeoutIds.current.forEach(clearTimeout);
+        timeoutIds.current = [];
       };
     }, [isReady, executeReCaptcha]);
 
