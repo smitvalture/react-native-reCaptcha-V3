@@ -1,8 +1,39 @@
 import React, { forwardRef, useImperativeHandle, useRef, useState, useEffect } from 'react';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, ViewStyle } from 'react-native';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
-import type { GoogleRecaptchaRefAttributes, ReCaptchaMessage, ReCaptchaProps, WebViewError, WebViewHttpError } from './types';
-export type { ReCaptchaProps, GoogleRecaptchaRefAttributes, ReCaptchaMessage } from './types';
+
+// Type definitions
+export interface ReCaptchaProps {
+  siteKey: string;
+  baseUrl: string;
+  action?: string;
+  onVerify?: (token: string) => void;
+  onError?: (error: string) => void;
+  style?: ViewStyle;
+  containerStyle?: ViewStyle;
+}
+
+export interface GoogleRecaptchaRefAttributes {
+  getToken: (action?: string) => Promise<string | null>;
+  isReady: () => boolean;
+}
+
+export interface ReCaptchaMessage {
+  type: 'VERIFY' | 'ERROR' | 'READY';
+  token?: string;
+  error?: string;
+  action?: string;
+}
+
+export interface WebViewError {
+  description: string;
+  url?: string;
+}
+
+export interface WebViewHttpError {
+  statusCode: number;
+  url?: string;
+}
 
 const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
   ({ 

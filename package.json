@@ -6,6 +6,7 @@
   "main": "./lib/commonjs/index.js",
   "module": "./lib/module/index.js",
   "types": "./lib/typescript/commonjs/index.d.ts",
+  "typeRoots": ["./src/types", "./node_modules/@types"],
   "exports": {
     ".": {
       "import": {
