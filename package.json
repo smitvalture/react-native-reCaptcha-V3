@@ -5,7 +5,12 @@
   "main": "./lib/commonjs/index.js",
   "types": "./lib/typescript/commonjs/index.d.ts",
   "exports": {
-    ".": "./lib/commonjs/index.js"
+    ".": {
+      "types": "./lib/typescript/commonjs/index.d.ts",
+      "default": "./lib/commonjs/index.js",
+      "require": "./lib/commonjs/index.js",
+      "import": "./lib/commonjs/index.js"
+    }
   },
   "files": [
     "lib",
