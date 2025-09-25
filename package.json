@@ -1,12 +1,15 @@
 {
   "name": "@valture/react-native-recaptcha-v3",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "React Native component for integrating Google reCAPTCHA v3, providing seamless bot protection for mobile applications.",
   "source": "./src/index.tsx",
   "main": "./lib/commonjs/index.js",
   "module": "./lib/module/index.js",
   "types": "./lib/typescript/commonjs/index.d.ts",
-  "typeRoots": ["./src/types", "./node_modules/@types"],
+  "typeRoots": [
+    "./src/types",
+    "./node_modules/@types"
+  ],
   "exports": {
     ".": {
       "import": {
