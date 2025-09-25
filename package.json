@@ -7,9 +7,7 @@
   "exports": {
     ".": {
       "types": "./lib/typescript/commonjs/index.d.ts",
-      "default": "./lib/commonjs/index.js",
-      "require": "./lib/commonjs/index.js",
-      "import": "./lib/commonjs/index.js"
+      "default": "./lib/commonjs/index.js"
     }
   },
   "files": [
