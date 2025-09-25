@@ -1,4 +1,4 @@
-import React, { forwardRef, useImperativeHandle, useRef, useState, useEffect } from 'react';
+import { forwardRef, useImperativeHandle, useRef, useState, useEffect, useCallback } from 'react';
 import { StyleSheet, ViewStyle } from 'react-native';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 
@@ -60,7 +60,7 @@ const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
       reject: (reason?: any) => void;
     }>>([]);
 
-    const handleError = React.useCallback((error: string) => {
+    const handleError = useCallback((error: string) => {
       onError?.(error);
       if (tokenPromiseRef.current) {
         tokenPromiseRef.current.reject(new Error(error));
@@ -71,8 +71,6 @@ const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
     // Handle the case when reCAPTCHA is ready
     useEffect(() => {
       if (isReady && pendingRequests.current.length > 0) {
-        console.log(`Processing ${pendingRequests.current.length} pending reCAPTCHA requests`);
-        
         // Process all pending requests
         const requests = [...pendingRequests.current];
         pendingRequests.current = [];
@@ -92,10 +90,13 @@ const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
       }
     }, [isReady]);
 
+    // Small utility to trim excessive whitespace in template strings so we keep
+    // readable source while sending compact payloads to the WebView
+    const minifyString = (input: string) => input.replace(/\s+/g, ' ').trim();
+
     // Function to execute reCAPTCHA and get a token
     const executeReCaptcha = (customAction: string, resolve: (value: string | null) => void, reject: (reason?: any) => void) => {
       if (!isReady) {
-        console.warn('reCAPTCHA not ready yet, queueing request');
         pendingRequests.current.push({ action: customAction, resolve, reject });
         return;
       }
@@ -106,45 +107,45 @@ const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
         (function executeReCaptcha() {
           try {
             if (window.grecaptcha && window.grecaptcha.execute) {
-              window.grecaptcha.execute('${siteKey}', { action: '${customAction}' })
-                .then(function(token) {
-                  window.ReactNativeWebView.postMessage(JSON.stringify({
-                    type: 'VERIFY',
-                    token: token,
-                    action: '${customAction}'
-                  }));
+              window.grecaptcha
+                .execute('${siteKey}', { action: '${customAction}' })
+                .then(function (token) {
+                  window.ReactNativeWebView.postMessage(
+                    JSON.stringify({ type: 'VERIFY', token: token, action: '${customAction}' })
+                  );
                 })
-                .catch(function(error) {
-                  window.ReactNativeWebView.postMessage(JSON.stringify({
-                    type: 'ERROR',
-                    error: error.message || 'reCAPTCHA execution failed',
-                    action: '${customAction}'
-                  }));
+                .catch(function (error) {
+                  window.ReactNativeWebView.postMessage(
+                    JSON.stringify({
+                      type: 'ERROR',
+                      error: error.message || 'reCAPTCHA execution failed',
+                      action: '${customAction}',
+                    })
+                  );
                 });
             } else {
-              window.ReactNativeWebView.postMessage(JSON.stringify({
-                type: 'ERROR',
-                error: 'reCAPTCHA not ready',
-                action: '${customAction}'
-              }));
+              window.ReactNativeWebView.postMessage(
+                JSON.stringify({ type: 'ERROR', error: 'reCAPTCHA not ready', action: '${customAction}' })
+              );
             }
           } catch (e) {
-            window.ReactNativeWebView.postMessage(JSON.stringify({
-              type: 'ERROR',
-              error: 'JavaScript execution error: ' + (e.message || 'Unknown error'),
-              action: '${customAction}'
-            }));
+            window.ReactNativeWebView.postMessage(
+              JSON.stringify({
+                type: 'ERROR',
+                error: 'JavaScript execution error: ' + (e.message || 'Unknown error'),
+                action: '${customAction}',
+              })
+            );
           }
           return true;
         })();
       `;
       
-      webViewRef.current?.injectJavaScript(jsToInject);
+      webViewRef.current?.injectJavaScript(minifyString(jsToInject));
     };
 
     useImperativeHandle(ref, () => ({
       getToken: (customAction = action) => {
-        console.log("🚀 ~ useImperativeHandle ~ customAction:", customAction)
         return new Promise((resolve, reject) => {
           executeReCaptcha(customAction, resolve, reject);
         });
@@ -160,35 +161,31 @@ const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
       <!DOCTYPE html>
       <html>
         <head>
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0" />
           <script>
-            // Global error handler
-            window.onerror = function(msg, url, lineNo, columnNo, error) {
-              if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
-                window.ReactNativeWebView.postMessage(JSON.stringify({
-                  type: 'ERROR',
-                  error: 'Script error: ' + msg
-                }));
+            // Minimal error surface forwarded to RN side
+            window.onerror = function (msg) {
+              if (window.ReactNativeWebView) {
+                window.ReactNativeWebView.postMessage(
+                  JSON.stringify({ type: 'ERROR', error: 'Script error: ' + msg })
+                );
               }
               return false;
             };
-            
-            // Function to check if reCAPTCHA is ready and notify the React Native app
+
             function checkRecaptchaReady() {
               if (window.grecaptcha && window.grecaptcha.ready) {
-                window.grecaptcha.ready(function() {
-                  if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
-                    window.ReactNativeWebView.postMessage(JSON.stringify({
-                      type: 'READY'
-                    }));
+                window.grecaptcha.ready(function () {
+                  if (window.ReactNativeWebView) {
+                    window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'READY' }));
                   }
                 });
               } else {
                 setTimeout(checkRecaptchaReady, 500);
               }
             }
-            
-            // Start checking for reCAPTCHA readiness immediately
+
+            // Kick off readiness checks
             setTimeout(checkRecaptchaReady, 500);
           </script>
         </head>
@@ -196,56 +193,47 @@ const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
           <div id="recaptcha-container"></div>
           <script src="https://www.google.com/recaptcha/api.js?render=${siteKey}" async defer></script>
           <script>
-            // Also check readiness when DOM is fully loaded
-            document.addEventListener('DOMContentLoaded', function() {
-              checkRecaptchaReady();
-            });
+            document.addEventListener('DOMContentLoaded', checkRecaptchaReady);
           </script>
         </body>
       </html>
     `;
 
-    const handleMessage = React.useCallback((event: WebViewMessageEvent) => {
+    const handleMessage = useCallback((event: WebViewMessageEvent) => {
       try {
         const data: ReCaptchaMessage = JSON.parse(event.nativeEvent.data);
         
         if (data.type === 'READY') {
-          console.log('reCAPTCHA is ready');
           setIsReady(true);
         } else if (data.type === 'VERIFY' && data.token) {
-          console.log('reCAPTCHA token received');
           onVerify?.(data.token);
           if (tokenPromiseRef.current) {
             tokenPromiseRef.current.resolve(data.token);
             tokenPromiseRef.current = null;
           }
         } else if (data.type === 'ERROR') {
-          console.warn('reCAPTCHA error:', data.error);
           handleError(data.error || 'reCAPTCHA error');
         }
       } catch (error) {
-        console.error('Failed to parse WebView message:', error);
         handleError('Failed to parse reCAPTCHA response');
       }
     }, [onVerify, handleError]);
 
-    const handleWebViewError = React.useCallback((syntheticEvent: { nativeEvent: WebViewError }) => {
+    const handleWebViewError = (syntheticEvent: { nativeEvent: WebViewError }) => {
       const { nativeEvent } = syntheticEvent;
-      console.error('WebView error:', nativeEvent);
       handleError(`WebView error: ${nativeEvent.description}`);
-    }, [handleError]);
+    };
 
-    const handleWebViewHttpError = React.useCallback((syntheticEvent: { nativeEvent: WebViewHttpError }) => {
+    const handleWebViewHttpError = (syntheticEvent: { nativeEvent: WebViewHttpError }) => {
       const { nativeEvent } = syntheticEvent;
-      console.error('WebView HTTP error:', nativeEvent);
       handleError(`WebView HTTP error: ${nativeEvent.statusCode}`);
-    }, [handleError]);
+    };
 
     return (
       <WebView
         ref={webViewRef}
         source={{ 
-          html: htmlContent,
+          html: minifyString(htmlContent),
           baseUrl
         }}
         onMessage={handleMessage}
