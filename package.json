@@ -15,7 +15,8 @@
     "!**/__tests__",
     "!**/__mocks__",
     "!**/.*",
-    "!**/*.map"
+    "!**/*.map",
+    "!LOCAL_TESTING.md"
   ],
   "scripts": {
     "typecheck": "tsc",
