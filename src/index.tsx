@@ -162,6 +162,23 @@ const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
       <html>
         <head>
           <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+          <script src="https://www.google.com/recaptcha/api.js?render=${siteKey}"
+            onload="(function(){
+              try {
+                if (window.grecaptcha && window.grecaptcha.ready) {
+                  window.grecaptcha.ready(function () {
+                    if (window.ReactNativeWebView) {
+                      window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'READY' }));
+                    }
+                  });
+                }
+              } catch (e) {
+                if (window.ReactNativeWebView) {
+                  window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'ERROR', error: 'onload error: ' + (e && e.message ? e.message : 'Unknown') }));
+                }
+              }
+            })()"
+          ></script>
           <script>
             // Minimal error surface forwarded to RN side
             window.onerror = function (msg) {
@@ -172,29 +189,29 @@ const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
               }
               return false;
             };
-
-            function checkRecaptchaReady() {
+            
+            // Fallback in case onload didn't fire in time
+            (function ensureReady(){
               if (window.grecaptcha && window.grecaptcha.ready) {
-                window.grecaptcha.ready(function () {
+                try {
+                  window.grecaptcha.ready(function () {
+                    if (window.ReactNativeWebView) {
+                      window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'READY' }));
+                    }
+                  });
+                } catch (e) {
                   if (window.ReactNativeWebView) {
-                    window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'READY' }));
+                    window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'ERROR', error: 'ready error: ' + (e && e.message ? e.message : 'Unknown') }));
                   }
-                });
+                }
               } else {
-                setTimeout(checkRecaptchaReady, 500);
+                setTimeout(ensureReady, 300);
               }
-            }
-
-            // Kick off readiness checks
-            setTimeout(checkRecaptchaReady, 500);
+            })();
           </script>
         </head>
         <body style="background-color: transparent;">
           <div id="recaptcha-container"></div>
-          <script src="https://www.google.com/recaptcha/api.js?render=${siteKey}" async defer></script>
-          <script>
-            document.addEventListener('DOMContentLoaded', checkRecaptchaReady);
-          </script>
         </body>
       </html>
     `;
