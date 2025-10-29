@@ -22,6 +22,7 @@
     "lint": "eslint \"**/*.{js,ts,tsx}\"",
     "clean": "del-cli lib",
     "prepare": "bob build",
+    "pack:local": "npm run clean && npm run prepare && npm pack",
     "release": "release-it"
   },
   "keywords": [
