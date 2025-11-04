@@ -9,10 +9,13 @@ A lightweight React Native component for seamless integration of Google reCAPTCH
 ## ✨ Features
 
 - **Invisible Integration**: Embeds Google reCAPTCHA v3 without user interaction.
-- **Simple API**: Offers hook and ref-based methods for token retrieval.
+- **Simple API**: Offers ref-based methods for token retrieval with automatic error handling.
+- **Auto-Recovery**: Automatically handles reset and retry when reCAPTCHA is not ready.
+- **Network Error Detection**: Comprehensive offline/network error detection with immediate feedback.
 - **Custom Actions**: Supports custom action names for fine-grained security policies.
 - **WebView-Based**: Leverages `react-native-webview` for reliable reCAPTCHA rendering.
 - **TypeScript Support**: Fully typed for better developer experience.
+- **Debug Mode**: Optional test mode for detailed logging during development.
 
 ## 📦 Installation
 
@@ -84,6 +87,7 @@ const App = () => {
 
   const handleSubmit = async () => {
     try {
+      // getToken automatically handles reset and readiness checks
       const token = await recaptchaRef.current?.getToken('login');
       if (token) {
         handleVerify(token);
@@ -91,6 +95,7 @@ const App = () => {
         Alert.alert('Token Request Failed', 'No token received.');
       }
     } catch (error) {
+      // Errors are automatically handled - network errors, timeouts, etc.
       Alert.alert('Token Request Error', String(error));
     }
   };
@@ -105,6 +110,7 @@ const App = () => {
         onVerify={handleVerify}
         onError={handleError}
         containerStyle={styles.recaptchaContainer}
+        testMode={__DEV__} // Enable debug logs in development
       />
       <Button title="Verify (e.g., Login)" onPress={handleSubmit} />
     </View>
@@ -134,34 +140,55 @@ export default App;
 
 ### Props
 
-| Prop             | Type                                | Required | Default    | Description                                                                 |
-|------------------|-------------------------------------|----------|------------|-----------------------------------------------------------------------------|
-| `siteKey`        | `string`                            | Yes      |            | Google reCAPTCHA v3 Site Key.                                               |
-| `baseUrl`        | `string`                            | Yes      |            | Registered domain for reCAPTCHA (e.g., `https://api.mydomain.com`).         |
-| `action`         | `string`                            | No       | `'submit'` | Default action name for reCAPTCHA requests.                                 |
-| `onVerify`       | `(token: string) => void`           | No       |            | Callback triggered on successful token generation.                          |
-| `onError`        | `(error: string) => void`           | No       |            | Callback triggered on reCAPTCHA errors.                                     |
-| `style`          | `ViewStyle`                         | No       |            | Styles for the underlying `WebView`.                                        |
-| `containerStyle` | `ViewStyle`                         | No       |            | Styles for the container wrapping the `WebView`.                            |
+| Prop                     | Type                                | Required | Default    | Description                                                                 |
+|--------------------------|-------------------------------------|----------|------------|-----------------------------------------------------------------------------|
+| `siteKey`                | `string`                            | Yes      |            | Google reCAPTCHA v3 Site Key.                                               |
+| `baseUrl`                | `string`                            | Yes      |            | Registered domain for reCAPTCHA (e.g., `https://api.mydomain.com`).         |
+| `action`                 | `string`                            | No       | `'submit'` | Default action name for reCAPTCHA requests.                                 |
+| `onVerify`               | `(token: string) => void`           | No       |            | Callback triggered on successful token generation.                          |
+| `onError`                | `(error: string) => void`           | No       |            | Callback triggered on reCAPTCHA errors.                                     |
+| `onLoadStart`            | `() => void`                        | No       |            | Callback triggered when WebView starts loading.                             |
+| `onLoadEnd`               | `() => void`                        | No       |            | Callback triggered when WebView finishes loading.                           |
+| `style`                  | `ViewStyle`                         | No       |            | Styles for the underlying `WebView`.                                        |
+| `containerStyle`         | `ViewStyle`                         | No       |            | Styles for the container wrapping the `WebView`.                            |
+| `initializationTimeout`  | `number`                            | No       | `30000`     | Timeout in milliseconds for reCAPTCHA initialization (default: 30s).        |
+| `tokenRequestTimeout`    | `number`                            | No       | `15000`     | Timeout in milliseconds for token requests (default: 15s).                  |
+| `testMode`               | `boolean`                           | No       | `false`     | Enable debug logging for troubleshooting.                                   |
 
 ### Methods
 
-| Method     | Signature                               | Description                                                       |
-|------------|-----------------------------------------|-------------------------------------------------------------------|
-| `getToken` | `(action?: string) => Promise<string>` | Retrieves a reCAPTCHA token, optionally with a custom action name. |
+| Method     | Signature                                    | Description                                                       |
+|------------|----------------------------------------------|-------------------------------------------------------------------|
+| `getToken` | `(action?: string) => Promise<string>`      | Retrieves a reCAPTCHA token. Automatically handles reset and readiness checks. Rejects on network errors or timeouts. |
+| `isReady`  | `() => boolean`                              | Returns `true` if reCAPTCHA is ready and no errors occurred.    |
+| `reset`    | `() => Promise<void>`                       | Resets the component and reloads the WebView. Returns a Promise that resolves when reset is complete. |
 
 **Example**:
 
 ```typescript
 const recaptchaRef = useRef<GoogleRecaptchaRefAttributes>(null);
 
+// Check if ready
+if (recaptchaRef.current?.isReady()) {
+  console.log('reCAPTCHA is ready');
+}
+
+// Get token with custom action
 const handleCustomAction = async () => {
   try {
+    // getToken automatically handles reset and readiness
     const token = await recaptchaRef.current?.getToken('update_profile');
     console.log('Token:', token);
   } catch (error) {
+    // Handles: network errors, timeouts, initialization failures
     console.error('Token Error:', error);
   }
+};
+
+// Manual reset if needed
+const handleReset = async () => {
+  await recaptchaRef.current?.reset();
+  console.log('reCAPTCHA reset complete');
 };
 ```
 
@@ -169,14 +196,32 @@ const handleCustomAction = async () => {
 
 The component uses a hidden `react-native-webview` to load an HTML page with the Google reCAPTCHA v3 script. It communicates with the WebView via `postMessage` to request and receive tokens or handle errors, ensuring seamless integration.
 
+### Auto-Recovery
+
+When `getToken()` is called:
+- If reCAPTCHA is not ready, it automatically resets and waits for initialization
+- If there's a network error, it immediately rejects with a clear error message
+- All pending requests are queued and processed once ready
+
+### Error Handling
+
+The component provides comprehensive error detection:
+- **Network Errors**: Detected when offline or when script fails to load
+- **Initialization Timeout**: Triggers if reCAPTCHA doesn't initialize within the timeout period
+- **Token Request Timeout**: Triggers if token generation takes too long
+
+All errors are automatically handled and rejected through the `getToken()` Promise.
+
 ## ⚠️ Troubleshooting
 
 - **Invalid Site Key**: Verify your `siteKey` matches the one in the Google reCAPTCHA Admin Console.
 - **Domain Mismatch**: Ensure `baseUrl` exactly matches a registered domain (including `https://`). Check for typos or missing schemes.
 - **WebView Issues**: Confirm `react-native-webview` is properly installed and linked (if using older React Native versions).
-- **Network Errors**: Ensure the device has internet access to connect to Google’s reCAPTCHA services.
-- **Backend Verification**: Tokens must be verified on your backend using the **Secret Key**. See [Google’s verification docs](https://developers.google.com/recaptcha/docs/verify).
-- **Error: Invalid domain for site key**: Reconfirm the `baseUrl` in your reCAPTCHA Admin Console matches the component’s `baseUrl`.
+- **Network Errors**: The component automatically detects offline state. Ensure the device has internet access to connect to Google's reCAPTCHA services.
+- **Not Ready Errors**: If `getToken()` fails with "not ready", the component will automatically reset. If issues persist, check network connectivity.
+- **Backend Verification**: Tokens must be verified on your backend using the **Secret Key**. See [Google's verification docs](https://developers.google.com/recaptcha/docs/verify).
+- **Error: Invalid domain for site key**: Reconfirm the `baseUrl` in your reCAPTCHA Admin Console matches the component's `baseUrl`.
+- **Debug Mode**: Enable `testMode={true}` to see detailed logs about initialization, errors, and token requests.
 
 ## 🤝 Contributing
 
