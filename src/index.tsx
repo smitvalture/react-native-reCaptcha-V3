@@ -134,6 +134,9 @@ const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
     const prevBaseUrlRef = useRef<string | undefined>(undefined);
     const resetResolvers = useRef<Array<() => void>>([]);
     const hasFiredLoadEndRef = useRef(false);
+    const forceReadyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+      null
+    );
 
     // Mirror state into refs so timer callbacks can read the latest value
     // without being captured-stale by their closure (bug fix: force-READY race).
@@ -178,7 +181,7 @@ const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
       }
     };
 
-    // Cleanup timeouts
+    // Cleanup timeouts (init + in-flight + queued)
     const cleanup = useCallback(() => {
       if (initializationTimeoutRef.current) {
         clearTimeout(initializationTimeoutRef.current);
@@ -187,6 +190,37 @@ const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
       if (tokenRequestRef.current?.timeoutId) {
         clearTimeout(tokenRequestRef.current.timeoutId);
       }
+      pendingRequests.current.forEach((req) => {
+        if (req.timeoutId) clearTimeout(req.timeoutId);
+      });
+    }, []);
+
+    // Unmount cleanup: clear timers and detach abort listeners so a
+    // teardown mid-flight doesn't leak timers or fire late callbacks.
+    useEffect(() => {
+      return () => {
+        if (initializationTimeoutRef.current) {
+          clearTimeout(initializationTimeoutRef.current);
+          initializationTimeoutRef.current = null;
+        }
+        if (forceReadyTimerRef.current) {
+          clearTimeout(forceReadyTimerRef.current);
+          forceReadyTimerRef.current = null;
+        }
+        if (tokenRequestRef.current) {
+          if (tokenRequestRef.current.timeoutId) {
+            clearTimeout(tokenRequestRef.current.timeoutId);
+          }
+          detachAbortListener(tokenRequestRef.current);
+          tokenRequestRef.current = null;
+        }
+        pendingRequests.current.forEach((req) => {
+          if (req.timeoutId) clearTimeout(req.timeoutId);
+          detachAbortListener(req);
+        });
+        pendingRequests.current = [];
+        resetResolvers.current = [];
+      };
     }, []);
 
     // Reset component - returns Promise that resolves when reset is complete
@@ -708,7 +742,10 @@ const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
     const handleLoadStart = useCallback(() => {
       setIsReady(false);
       setHasError(false);
-      pendingRequests.current = [];
+      // Intentionally do NOT clear pendingRequests here: requests the user
+      // queued between component mount and the WebView's first onLoadStart
+      // would be silently lost. reset() explicitly rejects + clears pendings
+      // when a controlled teardown is needed.
       hasFiredLoadEndRef.current = false;
       onLoadStart?.();
     }, [onLoadStart]);
@@ -731,8 +768,11 @@ const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
       // Force-READY safety net: if WebView load ended but the JS hasn't sent
       // READY yet, probe state after a short delay. Use refs so we read the
       // latest isReady/hasError, not closure-captured stale values.
+      if (forceReadyTimerRef.current) {
+        clearTimeout(forceReadyTimerRef.current);
+      }
       if (!isReadyRef.current && !hasErrorRef.current) {
-        setTimeout(() => {
+        forceReadyTimerRef.current = setTimeout(() => {
           if (
             !isReadyRef.current &&
             !hasErrorRef.current &&
