@@ -5,30 +5,54 @@ import {
   useState,
   useEffect,
   useCallback,
+  useMemo,
 } from 'react';
 import { StyleSheet, ViewStyle } from 'react-native';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 
-// Constants
+// Public defaults
 const DEFAULT_ACTION = 'submit';
 const INITIALIZATION_TIMEOUT = 30000; // 30 seconds
 const TOKEN_REQUEST_TIMEOUT = 15000; // 15 seconds
 
+// Internal tuning
+const NETWORK_DETECTION_TIMEOUT_MS = 8000;
+const FORCE_READY_DELAY_MS = 1000;
+const SCRIPT_MAX_LOAD_TIME_MS = 3000;
+const SCRIPT_LOAD_TIMEOUT_MS = 10000;
+const SCRIPT_READY_TIMEOUT_MS = 5000;
+const SCRIPT_CHECK_INTERVAL_MS = 200;
+
+// Site keys are alphanumeric with - and _; reCAPTCHA keys are typically 40 chars
+const SITE_KEY_PATTERN = /^[A-Za-z0-9_-]{20,80}$/;
+
 // Error messages
 const ERROR_MESSAGES = {
-  NETWORK_ERROR: 'Network connection required. Please check your internet connection.',
-  INITIALIZATION_TIMEOUT: 'reCAPTCHA initialization timed out. Please check your internet connection.',
+  NETWORK_ERROR:
+    'Network connection required. Please check your internet connection.',
+  INITIALIZATION_TIMEOUT:
+    'reCAPTCHA initialization timed out. Please check your internet connection.',
   TOKEN_REQUEST_TIMEOUT: 'Token request timed out. Please try again.',
   NOT_READY: 'reCAPTCHA is not ready. Please wait and try again.',
   INVALID_TOKEN: 'Invalid token received from reCAPTCHA.',
+  SUPERSEDED: 'Token request superseded by a newer request.',
+  RESET: 'Token request cancelled: reCAPTCHA was reset.',
+  ABORTED: 'Token request was aborted.',
+  INVALID_SITE_KEY:
+    'Invalid siteKey. Expected a Google reCAPTCHA v3 site key (alphanumeric, dashes, underscores).',
 } as const;
 
 // Type definitions
+export interface GetTokenOptions {
+  /** Optional AbortSignal to cancel an in-flight token request. */
+  signal?: AbortSignal;
+}
+
 export interface ReCaptchaProps {
   siteKey: string;
   baseUrl: string;
   action?: string;
-  onVerify?: (token: string) => void;
+  onVerify?: (token: string, action: string) => void;
   onError?: (error: string) => void;
   onLoadStart?: () => void;
   onLoadEnd?: () => void;
@@ -37,10 +61,25 @@ export interface ReCaptchaProps {
   initializationTimeout?: number;
   tokenRequestTimeout?: number;
   testMode?: boolean;
+  /**
+   * Use reCAPTCHA Enterprise (grecaptcha.enterprise.execute) instead of the
+   * standard v3 endpoint. Defaults to false.
+   */
+  useEnterprise?: boolean;
+  /**
+   * Origins the WebView is allowed to navigate to. Defaults to a narrow set
+   * (Google reCAPTCHA + baseUrl) for safer browsing. Pass `['*']` to opt out.
+   */
+  originWhitelist?: readonly string[];
+  /**
+   * Android-only WebView setting controlling mixed (HTTP-in-HTTPS) content.
+   * Defaults to 'never' for safer behavior on a security-focused component.
+   */
+  mixedContentMode?: 'never' | 'always' | 'compatibility';
 }
 
 export interface GoogleRecaptchaRefAttributes {
-  getToken: (action?: string) => Promise<string>;
+  getToken: (action?: string, options?: GetTokenOptions) => Promise<string>;
   isReady: () => boolean;
   reset: () => Promise<void>;
 }
@@ -56,7 +95,9 @@ interface TokenRequest {
   resolve: (value: string) => void;
   reject: (reason: Error) => void;
   action: string;
-  timeoutId?: NodeJS.Timeout;
+  timeoutId?: ReturnType<typeof setTimeout>;
+  abortHandler?: () => void;
+  signal?: AbortSignal;
 }
 
 const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
@@ -74,24 +115,68 @@ const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
       initializationTimeout = INITIALIZATION_TIMEOUT,
       tokenRequestTimeout = TOKEN_REQUEST_TIMEOUT,
       testMode = false,
+      useEnterprise = false,
+      originWhitelist,
+      mixedContentMode = 'never',
     },
     ref
   ) => {
     const webViewRef = useRef<WebView>(null);
     const [isReady, setIsReady] = useState(false);
     const [hasError, setHasError] = useState(false);
-    
+
     const tokenRequestRef = useRef<TokenRequest | null>(null);
-    const initializationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const initializationTimeoutRef = useRef<ReturnType<
+      typeof setTimeout
+    > | null>(null);
     const pendingRequests = useRef<Array<TokenRequest>>([]);
     const prevSiteKeyRef = useRef<string | undefined>(undefined);
     const prevBaseUrlRef = useRef<string | undefined>(undefined);
-    const resetPromiseRef = useRef<{ resolve: () => void } | null>(null);
+    const resetResolvers = useRef<Array<() => void>>([]);
+    const hasFiredLoadEndRef = useRef(false);
+
+    // Mirror state into refs so timer callbacks can read the latest value
+    // without being captured-stale by their closure (bug fix: force-READY race).
+    const isReadyRef = useRef(isReady);
+    const hasErrorRef = useRef(hasError);
+    useEffect(() => {
+      isReadyRef.current = isReady;
+    }, [isReady]);
+    useEffect(() => {
+      hasErrorRef.current = hasError;
+    }, [hasError]);
 
     // Helper for conditional logging
-    const log = useCallback((...args: any[]) => {
-      if (testMode) console.log(...args);
-    }, [testMode]);
+    const log = useCallback(
+      (...args: unknown[]) => {
+        if (testMode) {
+          console.log(...args);
+        }
+      },
+      [testMode]
+    );
+
+    // Validate siteKey shape once per change. We don't throw — onError + hasError
+    // is the existing error channel, so we surface it that way.
+    const siteKeyInvalid = !SITE_KEY_PATTERN.test(siteKey);
+
+    // Detach an AbortSignal listener (no-op if not attached)
+    const detachAbortListener = (request: TokenRequest) => {
+      if (request.signal && request.abortHandler) {
+        request.signal.removeEventListener('abort', request.abortHandler);
+      }
+    };
+
+    // Safely reject a request once (swallow double-reject)
+    const safeReject = (request: TokenRequest, error: Error) => {
+      if (request.timeoutId) clearTimeout(request.timeoutId);
+      detachAbortListener(request);
+      try {
+        request.reject(error);
+      } catch {
+        // already rejected
+      }
+    };
 
     // Cleanup timeouts
     const cleanup = useCallback(() => {
@@ -110,13 +195,23 @@ const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
         cleanup();
         setIsReady(false);
         setHasError(false);
+        hasFiredLoadEndRef.current = false;
+
+        // Reject in-flight requests so callers don't hang until their own
+        // timeout fires (bug fix: pending request leak on reset).
+        const resetError = new Error(ERROR_MESSAGES.RESET);
+        if (tokenRequestRef.current) {
+          safeReject(tokenRequestRef.current, resetError);
+          tokenRequestRef.current = null;
+        }
+        const stillPending = pendingRequests.current;
         pendingRequests.current = [];
-        tokenRequestRef.current = null;
-        
-        // Store resolve function to call when WebView finishes loading
-        resetPromiseRef.current = { resolve };
-        
-        // Reload WebView - resolve will be called in handleLoadEnd
+        stillPending.forEach((req) => safeReject(req, resetError));
+
+        // Queue resolver - all queued resolvers fire on next handleLoadEnd
+        // (bug fix: concurrent reset() calls used to leak the first promise).
+        resetResolvers.current.push(resolve);
+
         webViewRef.current?.reload();
       });
     }, [cleanup]);
@@ -128,43 +223,35 @@ const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
         onError?.(error);
         setHasError(true);
 
-        // Reject current request
         if (tokenRequestRef.current) {
-          if (tokenRequestRef.current.timeoutId) {
-            clearTimeout(tokenRequestRef.current.timeoutId);
-          }
-          try {
-            tokenRequestRef.current.reject(new Error(error));
-          } catch (e) {
-            // Already rejected
-          }
+          safeReject(tokenRequestRef.current, new Error(error));
           tokenRequestRef.current = null;
         }
 
-        // Reject pending requests
-        pendingRequests.current.forEach((request) => {
-          if (request.timeoutId) clearTimeout(request.timeoutId);
-          try {
-            request.reject(new Error(error));
-          } catch (e) {
-            // Already rejected
-          }
-        });
+        const pending = pendingRequests.current;
         pendingRequests.current = [];
+        pending.forEach((request) => safeReject(request, new Error(error)));
       },
       [onError, log]
     );
 
-    // Initialize timeout - also detects if LOAD_ERROR never comes from WebView
+    // Initialize timeout - also detects if LOAD_ERROR never comes from WebView.
+    // Cap detection at NETWORK_DETECTION_TIMEOUT_MS so we fail fast on network
+    // issues regardless of the user-supplied initializationTimeout.
     useEffect(() => {
+      if (siteKeyInvalid) {
+        handleError(ERROR_MESSAGES.INVALID_SITE_KEY);
+        return;
+      }
       if (!isReady && !hasError) {
         initializationTimeoutRef.current = setTimeout(() => {
-          if (!isReady && !hasError) {
-            // If we haven't received READY or LOAD_ERROR after timeout, assume network error
-            log('[ReCaptcha] Initialization timeout - no response from WebView, assuming network error');
+          if (!isReadyRef.current && !hasErrorRef.current) {
+            log(
+              '[ReCaptcha] Initialization timeout - no response from WebView, assuming network error'
+            );
             handleError(ERROR_MESSAGES.NETWORK_ERROR);
           }
-        }, Math.min(initializationTimeout, 8000)); // Max 8 seconds to detect network issues
+        }, Math.min(initializationTimeout, NETWORK_DETECTION_TIMEOUT_MS));
       }
       return () => {
         if (initializationTimeoutRef.current) {
@@ -172,9 +259,16 @@ const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
           initializationTimeoutRef.current = null;
         }
       };
-    }, [isReady, hasError, initializationTimeout, handleError, log]);
+    }, [
+      isReady,
+      hasError,
+      initializationTimeout,
+      handleError,
+      log,
+      siteKeyInvalid,
+    ]);
 
-    // Reset on prop changes
+    // Reset on prop changes (siteKey or baseUrl)
     useEffect(() => {
       const isFirstMount = prevSiteKeyRef.current === undefined;
       if (isFirstMount) {
@@ -183,7 +277,10 @@ const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
         return;
       }
 
-      if (prevSiteKeyRef.current !== siteKey || prevBaseUrlRef.current !== baseUrl) {
+      if (
+        prevSiteKeyRef.current !== siteKey ||
+        prevBaseUrlRef.current !== baseUrl
+      ) {
         reset();
         prevSiteKeyRef.current = siteKey;
         prevBaseUrlRef.current = baseUrl;
@@ -195,7 +292,8 @@ const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
       (
         customAction: string,
         resolve: (value: string) => void,
-        reject: (reason: Error) => void
+        reject: (reason: Error) => void,
+        signal?: AbortSignal
       ) => {
         if (hasError) {
           reject(new Error(ERROR_MESSAGES.NETWORK_ERROR));
@@ -207,51 +305,66 @@ const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
           return;
         }
 
+        if (signal?.aborted) {
+          reject(new Error(ERROR_MESSAGES.ABORTED));
+          return;
+        }
+
         const request: TokenRequest = {
           resolve: (token: string) => {
             if (request.timeoutId) clearTimeout(request.timeoutId);
+            detachAbortListener(request);
             resolve(token);
           },
           reject: (error: Error) => {
             if (request.timeoutId) clearTimeout(request.timeoutId);
+            detachAbortListener(request);
             reject(error);
           },
           action: customAction,
+          signal,
         };
 
-        // Set timeout
         request.timeoutId = setTimeout(() => {
           if (tokenRequestRef.current === request) {
             tokenRequestRef.current = null;
           }
-          try {
-            request.reject(new Error(ERROR_MESSAGES.TOKEN_REQUEST_TIMEOUT));
-          } catch (e) {
-            // Already rejected
-          }
+          safeReject(request, new Error(ERROR_MESSAGES.TOKEN_REQUEST_TIMEOUT));
           onError?.(ERROR_MESSAGES.TOKEN_REQUEST_TIMEOUT);
         }, tokenRequestTimeout);
 
-        // If a previous request is still in-flight, reject it before overwriting
-        // so its promise doesn't hang until its own timeout fires.
+        if (signal) {
+          request.abortHandler = () => {
+            if (tokenRequestRef.current === request) {
+              tokenRequestRef.current = null;
+            }
+            safeReject(request, new Error(ERROR_MESSAGES.ABORTED));
+          };
+          signal.addEventListener('abort', request.abortHandler);
+        }
+
+        // Supersede any in-flight request with a SUPERSEDED error so the caller
+        // gets an accurate reason instead of TOKEN_REQUEST_TIMEOUT.
         const previous = tokenRequestRef.current;
         if (previous) {
-          if (previous.timeoutId) clearTimeout(previous.timeoutId);
-          try {
-            previous.reject(new Error(ERROR_MESSAGES.TOKEN_REQUEST_TIMEOUT));
-          } catch (e) {
-            // Already rejected
-          }
+          safeReject(previous, new Error(ERROR_MESSAGES.SUPERSEDED));
         }
         tokenRequestRef.current = request;
 
-        // Inject JavaScript
+        // Inject JavaScript. siteKey is regex-validated above, but escape
+        // action anyway since it's user-supplied.
         const escapedAction = customAction.replace(/'/g, "\\'");
+        const execCall = useEnterprise
+          ? 'window.grecaptcha.enterprise.execute'
+          : 'window.grecaptcha.execute';
+        const execCheck = useEnterprise
+          ? 'window.grecaptcha && window.grecaptcha.enterprise && window.grecaptcha.enterprise.execute'
+          : 'window.grecaptcha && window.grecaptcha.execute';
         const jsCode = `
           (function() {
             try {
-              if (window.grecaptcha && window.grecaptcha.execute) {
-                window.grecaptcha.execute('${siteKey}', { action: '${escapedAction}' })
+              if (${execCheck}) {
+                ${execCall}('${siteKey}', { action: '${escapedAction}' })
                   .then(function(token) {
                     if (token && typeof token === 'string' && token.length > 0) {
                       window.ReactNativeWebView.postMessage(
@@ -284,7 +397,7 @@ const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
 
         webViewRef.current?.injectJavaScript(jsCode);
       },
-      [isReady, hasError, siteKey, tokenRequestTimeout, onError]
+      [isReady, hasError, siteKey, tokenRequestTimeout, onError, useEnterprise]
     );
 
     // Process pending requests when ready
@@ -293,7 +406,14 @@ const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
         const requests = [...pendingRequests.current];
         pendingRequests.current = [];
         requests.forEach((request) => {
-          executeReCaptcha(request.action, request.resolve, request.reject);
+          if (request.timeoutId) clearTimeout(request.timeoutId);
+          detachAbortListener(request);
+          executeReCaptcha(
+            request.action,
+            request.resolve,
+            request.reject,
+            request.signal
+          );
         });
       }
     }, [isReady, executeReCaptcha]);
@@ -302,9 +422,15 @@ const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
     useImperativeHandle(
       ref,
       () => ({
-        getToken: (customAction = action) => {
+        getToken: (customAction = action, options?: GetTokenOptions) => {
           return new Promise<string>((resolve, reject) => {
-            // If there's an error (e.g., LOAD_ERROR when offline), reject immediately
+            const signal = options?.signal;
+
+            if (signal?.aborted) {
+              reject(new Error(ERROR_MESSAGES.ABORTED));
+              return;
+            }
+
             if (hasError) {
               reject(new Error(ERROR_MESSAGES.NETWORK_ERROR));
               return;
@@ -315,33 +441,60 @@ const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
                 resolve,
                 reject,
                 action: customAction,
+                signal,
               };
 
               request.timeoutId = setTimeout(() => {
                 const index = pendingRequests.current.indexOf(request);
                 if (index !== -1) {
                   pendingRequests.current.splice(index, 1);
-                  request.reject(new Error(ERROR_MESSAGES.INITIALIZATION_TIMEOUT));
+                  safeReject(
+                    request,
+                    new Error(ERROR_MESSAGES.INITIALIZATION_TIMEOUT)
+                  );
                 }
               }, initializationTimeout);
+
+              if (signal) {
+                request.abortHandler = () => {
+                  const index = pendingRequests.current.indexOf(request);
+                  if (index !== -1) {
+                    pendingRequests.current.splice(index, 1);
+                  }
+                  safeReject(request, new Error(ERROR_MESSAGES.ABORTED));
+                };
+                signal.addEventListener('abort', request.abortHandler);
+              }
 
               pendingRequests.current.push(request);
               return;
             }
 
-            executeReCaptcha(customAction, resolve, reject);
+            executeReCaptcha(customAction, resolve, reject, signal);
           });
         },
         isReady: () => isReady && !hasError,
-        reset: () => {
-          return reset();
-        },
+        reset: () => reset(),
       }),
       [action, isReady, hasError, initializationTimeout, executeReCaptcha, reset]
     );
 
-    // HTML content
-    const htmlContent = `
+    // HTML content - memoized so it isn't rebuilt on every render.
+    const htmlContent = useMemo(() => {
+      const scriptUrl = useEnterprise
+        ? `https://www.google.com/recaptcha/enterprise.js?render=${siteKey}`
+        : `https://www.google.com/recaptcha/api.js?render=${siteKey}`;
+      const readyCall = useEnterprise
+        ? 'window.grecaptcha.enterprise.ready'
+        : 'window.grecaptcha.ready';
+      const readyCheck = useEnterprise
+        ? 'window.grecaptcha && window.grecaptcha.enterprise && window.grecaptcha.enterprise.ready'
+        : 'window.grecaptcha && window.grecaptcha.ready';
+      const executeCheck = useEnterprise
+        ? 'window.grecaptcha && window.grecaptcha.enterprise && window.grecaptcha.enterprise.execute'
+        : 'window.grecaptcha && window.grecaptcha.execute';
+
+      return `
       <!DOCTYPE html>
       <html>
         <head>
@@ -351,9 +504,9 @@ const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
             var scriptLoadTimeout;
             var checkInterval;
             var scriptStartTime = Date.now();
-            var maxLoadTime = 3000; // 3 seconds max for script to load
+            var maxLoadTime = ${SCRIPT_MAX_LOAD_TIME_MS};
             var loadErrorSent = false;
-            
+
             function sendMessage(type, data) {
               if (window.ReactNativeWebView) {
                 window.ReactNativeWebView.postMessage(JSON.stringify({ type: type, ...data }));
@@ -361,9 +514,9 @@ const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
             }
 
             function sendLoadError(reason) {
-              if (loadErrorSent) return; // Prevent duplicate errors
+              if (loadErrorSent) return;
               loadErrorSent = true;
-              
+
               if (scriptLoadTimeout) clearTimeout(scriptLoadTimeout);
               if (checkInterval) clearInterval(checkInterval);
               if (testMode) {
@@ -373,23 +526,21 @@ const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
             }
 
             function initializeRecaptcha() {
-              if (window.grecaptcha && window.grecaptcha.ready) {
+              if (${readyCheck}) {
                 if (testMode) {
                   sendMessage('DEBUG', { message: '[WebView] Calling grecaptcha.ready...' });
                 }
                 try {
-                  // Set a timeout for grecaptcha.ready callback
                   var readyTimeout = setTimeout(function() {
                     if (!loadErrorSent) {
                       sendLoadError('grecaptcha.ready callback timeout');
                     }
-                  }, 5000);
-                  
-                  window.grecaptcha.ready(function() {
+                  }, ${SCRIPT_READY_TIMEOUT_MS});
+
+                  ${readyCall}(function() {
                     clearTimeout(readyTimeout);
-                    
-                    // Verify that execute function exists (means it's actually ready, not just cached)
-                    if (window.grecaptcha && window.grecaptcha.execute) {
+
+                    if (${executeCheck}) {
                       if (scriptLoadTimeout) clearTimeout(scriptLoadTimeout);
                       if (checkInterval) clearInterval(checkInterval);
                       if (testMode) {
@@ -397,7 +548,6 @@ const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
                       }
                       sendMessage('READY', {});
                     } else {
-                      // grecaptcha exists but execute doesn't - might be cached/incomplete
                       if (testMode) {
                         sendMessage('DEBUG', { message: '[WebView] grecaptcha.ready fired but execute not available, might be network issue' });
                       }
@@ -413,67 +563,57 @@ const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
               }
             }
 
-            // Aggressive periodic check to detect if script never loads
             checkInterval = setInterval(function() {
               if (loadErrorSent) {
                 clearInterval(checkInterval);
                 return;
               }
-              
+
               var elapsed = Date.now() - scriptStartTime;
-              
-              // Check if script is still loading after max time
+
               if (elapsed >= maxLoadTime) {
                 if (typeof window.grecaptcha === 'undefined') {
                   sendLoadError('reCAPTCHA script failed to load after ' + (elapsed / 1000) + ' seconds');
-                } else if (window.grecaptcha && !window.grecaptcha.execute) {
-                  // Try to initialize, and if it fails, send error
-                  if (!window.grecaptcha.ready) {
+                } else if (!(${executeCheck})) {
+                  if (!(${readyCheck})) {
                     sendLoadError('reCAPTCHA script incomplete - ready function missing');
                   } else {
-                    // Try initialize once more
                     initializeRecaptcha();
-                    // If still not ready after additional 2 seconds, send error
                     setTimeout(function() {
-                      if (!loadErrorSent && (!window.grecaptcha || !window.grecaptcha.execute)) {
+                      if (!loadErrorSent && !(${executeCheck})) {
                         sendLoadError('reCAPTCHA script incomplete after ' + ((elapsed + 2000) / 1000) + ' seconds');
                       }
                     }, 2000);
                   }
                 }
               }
-            }, 200); // Check every 200ms for faster detection
+            }, ${SCRIPT_CHECK_INTERVAL_MS});
 
-            // Set a timeout as fallback (longer than periodic checks)
             scriptLoadTimeout = setTimeout(function() {
               if (!loadErrorSent) {
                 if (typeof window.grecaptcha === 'undefined') {
-                  sendLoadError('reCAPTCHA script load timeout after 10 seconds');
-                } else if (window.grecaptcha && !window.grecaptcha.execute) {
-                  sendLoadError('reCAPTCHA script incomplete after 10 seconds');
+                  sendLoadError('reCAPTCHA script load timeout after ${SCRIPT_LOAD_TIMEOUT_MS / 1000} seconds');
+                } else if (!(${executeCheck})) {
+                  sendLoadError('reCAPTCHA script incomplete after ${SCRIPT_LOAD_TIMEOUT_MS / 1000} seconds');
                 }
               }
-            }, 10000); // 10 seconds timeout for script load
+            }, ${SCRIPT_LOAD_TIMEOUT_MS});
 
-            // Listen for all error events
             window.addEventListener('error', function(e) {
               if (loadErrorSent) return;
-              
-              // Check if it's a script loading error
+
               if (e.target && e.target.tagName === 'SCRIPT') {
                 sendLoadError('Script load error: ' + (e.message || 'Unknown'));
-              } else if (e.filename && e.filename.includes('recaptcha')) {
-                // Error related to reCAPTCHA script
+              } else if (e.filename && e.filename.indexOf('recaptcha') !== -1) {
                 sendLoadError('reCAPTCHA script error: ' + (e.message || 'Unknown'));
               }
             }, true);
 
-            // Listen for unhandled promise rejections (might catch network errors)
             window.addEventListener('unhandledrejection', function(e) {
               if (loadErrorSent) return;
-              
+
               var reason = e.reason || '';
-              if (reason.toString && (reason.toString().includes('network') || reason.toString().includes('fetch') || reason.toString().includes('Failed to fetch'))) {
+              if (reason.toString && (reason.toString().indexOf('network') !== -1 || reason.toString().indexOf('fetch') !== -1 || reason.toString().indexOf('Failed to fetch') !== -1)) {
                 sendLoadError('Network error detected: ' + reason);
               }
             });
@@ -491,12 +631,11 @@ const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
               sendLoadError('Script onerror fired - failed to load reCAPTCHA');
             }
 
-            // Expose for the script tag's onload/onerror handlers
             window.handleScriptLoad = handleScriptLoad;
             window.handleScriptError = handleScriptError;
           </script>
           <script
-            src="https://www.google.com/recaptcha/api.js?render=${siteKey}"
+            src="${scriptUrl}"
             onload="window.handleScriptLoad()"
             onerror="window.handleScriptError()"
           ></script>
@@ -506,6 +645,7 @@ const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
         </body>
       </html>
     `;
+    }, [siteKey, testMode, useEnterprise]);
 
     // Handle messages
     const handleMessage = useCallback(
@@ -523,16 +663,14 @@ const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
                 clearTimeout(initializationTimeoutRef.current);
                 initializationTimeoutRef.current = null;
               }
-              onLoadEnd?.();
               break;
 
             case 'VERIFY':
               if (data.token && data.token.length > 0) {
-                onVerify?.(data.token);
+                const verifiedAction =
+                  tokenRequestRef.current?.action ?? action;
+                onVerify?.(data.token, verifiedAction);
                 if (tokenRequestRef.current) {
-                  if (tokenRequestRef.current.timeoutId) {
-                    clearTimeout(tokenRequestRef.current.timeoutId);
-                  }
                   tokenRequestRef.current.resolve(data.token);
                   tokenRequestRef.current = null;
                 }
@@ -559,7 +697,7 @@ const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
           handleError('Failed to parse reCAPTCHA response');
         }
       },
-      [onVerify, onLoadEnd, handleError, log]
+      [onVerify, handleError, log, action]
     );
 
     // Handle WebView errors
@@ -571,33 +709,52 @@ const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
       setIsReady(false);
       setHasError(false);
       pendingRequests.current = [];
+      hasFiredLoadEndRef.current = false;
       onLoadStart?.();
     }, [onLoadStart]);
 
     const handleLoadEnd = useCallback(() => {
-      // Resolve reset promise if waiting
-      if (resetPromiseRef.current) {
-        resetPromiseRef.current.resolve();
-        resetPromiseRef.current = null;
+      // Resolve all queued reset() promises (handles concurrent reset() calls)
+      if (resetResolvers.current.length > 0) {
+        const resolvers = resetResolvers.current;
+        resetResolvers.current = [];
+        resolvers.forEach((r) => r());
       }
-      
-      // Inject check script to verify reCAPTCHA status and force READY if needed
-      if (!isReady && !hasError) {
+
+      // Fire onLoadEnd at most once per load cycle. handleLoadStart clears
+      // this flag on the next reload.
+      if (!hasFiredLoadEndRef.current) {
+        hasFiredLoadEndRef.current = true;
+        onLoadEnd?.();
+      }
+
+      // Force-READY safety net: if WebView load ended but the JS hasn't sent
+      // READY yet, probe state after a short delay. Use refs so we read the
+      // latest isReady/hasError, not closure-captured stale values.
+      if (!isReadyRef.current && !hasErrorRef.current) {
         setTimeout(() => {
-          if (!isReady && !hasError && webViewRef.current) {
+          if (
+            !isReadyRef.current &&
+            !hasErrorRef.current &&
+            webViewRef.current
+          ) {
+            const readyCheck = useEnterprise
+              ? 'window.grecaptcha && window.grecaptcha.enterprise && window.grecaptcha.enterprise.execute'
+              : 'window.grecaptcha && window.grecaptcha.execute';
+            const readyCallChain = useEnterprise
+              ? 'window.grecaptcha.enterprise.ready'
+              : 'window.grecaptcha.ready';
             const checkScript = `
               (function() {
                 if (window.ReactNativeWebView) {
-                  if (window.grecaptcha && window.grecaptcha.execute) {
+                  if (${readyCheck}) {
                     window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'READY' }));
-                  } else if (window.grecaptcha && window.grecaptcha.ready) {
+                  } else if (window.grecaptcha && (window.grecaptcha.ready || (window.grecaptcha.enterprise && window.grecaptcha.enterprise.ready))) {
                     try {
-                      window.grecaptcha.ready(function() {
+                      ${readyCallChain}(function() {
                         window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'READY' }));
                       });
-                    } catch (e) {
-                      // Error already handled
-                    }
+                    } catch (e) {}
                   }
                 }
               })();
@@ -605,22 +762,26 @@ const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
             `;
             webViewRef.current.injectJavaScript(checkScript);
           }
-        }, 1000);
+        }, FORCE_READY_DELAY_MS);
       }
-      
-      onLoadEnd?.();
-    }, [onLoadEnd, isReady, hasError]);
+    }, [onLoadEnd, useEnterprise]);
+
+    const effectiveOriginWhitelist = originWhitelist ?? [
+      'https://www.google.com',
+      'https://www.gstatic.com',
+      baseUrl,
+    ];
 
     return (
       <WebView
         ref={webViewRef}
-        source={{ html: htmlContent.replace(/\s+/g, ' ').trim(), baseUrl }}
+        source={{ html: htmlContent, baseUrl }}
         onMessage={handleMessage}
         javaScriptEnabled={true}
         domStorageEnabled={true}
-        originWhitelist={['*']}
+        originWhitelist={effectiveOriginWhitelist as string[]}
         style={[styles.webview, style]}
-        mixedContentMode="always"
+        mixedContentMode={mixedContentMode}
         containerStyle={[styles.container, containerStyle]}
         onError={handleWebViewError}
         onHttpError={handleWebViewError}
