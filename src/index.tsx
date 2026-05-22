@@ -185,12 +185,9 @@ const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
 
       if (prevSiteKeyRef.current !== siteKey || prevBaseUrlRef.current !== baseUrl) {
         reset();
-        const timer = setTimeout(() => webViewRef.current?.reload(), 100);
         prevSiteKeyRef.current = siteKey;
         prevBaseUrlRef.current = baseUrl;
-        return () => clearTimeout(timer);
       }
-      return undefined;
     }, [siteKey, baseUrl, reset]);
 
     // Execute reCAPTCHA
@@ -235,6 +232,17 @@ const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
           onError?.(ERROR_MESSAGES.TOKEN_REQUEST_TIMEOUT);
         }, tokenRequestTimeout);
 
+        // If a previous request is still in-flight, reject it before overwriting
+        // so its promise doesn't hang until its own timeout fires.
+        const previous = tokenRequestRef.current;
+        if (previous) {
+          if (previous.timeoutId) clearTimeout(previous.timeoutId);
+          try {
+            previous.reject(new Error(ERROR_MESSAGES.TOKEN_REQUEST_TIMEOUT));
+          } catch (e) {
+            // Already rejected
+          }
+        }
         tokenRequestRef.current = request;
 
         // Inject JavaScript
@@ -470,15 +478,27 @@ const ReCaptchaV3 = forwardRef<GoogleRecaptchaRefAttributes, ReCaptchaProps>(
               }
             });
 
-            // Make functions globally available for script onload/onerror handlers
-            window.sendMessage = sendMessage;
-            window.initializeRecaptcha = initializeRecaptcha;
-            window.sendLoadError = sendLoadError;
+            function handleScriptLoad() {
+              if (scriptLoadTimeout) { clearTimeout(scriptLoadTimeout); scriptLoadTimeout = null; }
+              if (checkInterval) { clearInterval(checkInterval); checkInterval = null; }
+              if (testMode) {
+                sendMessage('DEBUG', { message: '[WebView] Script onload fired - reCAPTCHA script loaded' });
+              }
+              setTimeout(initializeRecaptcha, 100);
+            }
+
+            function handleScriptError() {
+              sendLoadError('Script onerror fired - failed to load reCAPTCHA');
+            }
+
+            // Expose for the script tag's onload/onerror handlers
+            window.handleScriptLoad = handleScriptLoad;
+            window.handleScriptError = handleScriptError;
           </script>
-          <script 
+          <script
             src="https://www.google.com/recaptcha/api.js?render=${siteKey}"
-            onerror="if(window.sendLoadError){window.sendLoadError('Script onerror fired - failed to load reCAPTCHA');}else if(window.sendMessage){if(window.scriptLoadTimeout)clearTimeout(window.scriptLoadTimeout);if(window.testMode){window.sendMessage('DEBUG',{message:'[WebView] Script onerror fired - failed to load reCAPTCHA'});}window.sendMessage('LOAD_ERROR', { error: 'Failed to load reCAPTCHA script' });}"
-            onload="(function(){if(window.scriptLoadTimeout){clearTimeout(window.scriptLoadTimeout);window.scriptLoadTimeout=null;}if(window.checkInterval){clearInterval(window.checkInterval);window.checkInterval=null;}if(window.testMode){window.sendMessage('DEBUG',{message:'[WebView] Script onload fired - reCAPTCHA script loaded'});}if(window.initializeRecaptcha){setTimeout(function(){window.initializeRecaptcha();},100);}})()"
+            onload="window.handleScriptLoad()"
+            onerror="window.handleScriptError()"
           ></script>
         </head>
         <body style="background-color: transparent; margin: 0; padding: 0;">
