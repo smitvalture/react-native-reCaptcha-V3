@@ -1,0 +1,91 @@
+name: Bug report
+description: Report a reproducible bug or unexpected behavior.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug report.
+
+        **Before submitting**, please confirm:
+        - You're using **`@valture/react-native-recaptcha-v3`** (not the abandoned `react-native-recaptcha-v3` or another package — see the [Picking the right package](https://github.com/smitvalture/react-native-recaptcha-v3#-picking-the-right-package) section).
+        - You've checked [existing issues](https://github.com/smitvalture/react-native-recaptcha-v3/issues?q=is%3Aissue) for duplicates.
+        - This is **not** a security vulnerability — those should follow [SECURITY.md](https://github.com/smitvalture/react-native-recaptcha-v3/blob/main/SECURITY.md) instead.
+
+  - type: input
+    id: version
+    attributes:
+      label: Package version
+      description: Output of `yarn list @valture/react-native-recaptcha-v3` (or check your package.json).
+      placeholder: "2.4.0"
+    validations:
+      required: true
+
+  - type: input
+    id: rn-version
+    attributes:
+      label: React Native version
+    validations:
+      required: true
+
+  - type: input
+    id: webview-version
+    attributes:
+      label: react-native-webview version
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform(s)
+      multiple: true
+      options:
+        - iOS
+        - Android
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What's the bug? What did you expect to happen?
+      placeholder: "When I call getToken() during ..., I expected ... but got ..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: A minimal code snippet is much more helpful than a description.
+      render: tsx
+      placeholder: |
+        <ReCaptcha
+          ref={recaptchaRef}
+          siteKey="..."
+          baseUrl="https://example.com"
+        />
+        ...
+        const token = await recaptchaRef.current?.getToken('login');
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: |
+        Enable `testMode={true}` on the component to capture verbose WebView logs.
+      render: shell
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Have you tried…
+      options:
+        - label: Reproducing with `testMode={true}` and including the verbose logs above
+        - label: Upgrading to the latest version
+        - label: Verifying your `siteKey` is for reCAPTCHA **v3** (not v2)
+        - label: Confirming `baseUrl` matches a domain registered in the reCAPTCHA Admin console

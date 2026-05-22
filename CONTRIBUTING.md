@@ -1,122 +1,97 @@
 # Contributing
 
-Contributions are always welcome, no matter how large or small!
+Contributions are welcome — bug fixes, feature ideas, doc improvements, and tests are all appreciated. This is a single-package library; the setup is straightforward.
 
-We want this community to be friendly and respectful to each other. Please follow it in all your interactions with the project. Before contributing, please read the [code of conduct](./CODE_OF_CONDUCT.md).
+Before contributing, please read the [Code of Conduct](./CODE_OF_CONDUCT.md). If you're reporting a **security vulnerability**, please follow [SECURITY.md](./SECURITY.md) rather than opening a public issue.
 
-## Development workflow
+## Development setup
 
-This project is a monorepo managed using [Yarn workspaces](https://yarnpkg.com/features/workspaces). It contains the following packages:
-
-- The library package in the root directory.
-- An example app in the `example/` directory.
-
-To get started with the project, run `yarn` in the root directory to install the required dependencies for each package:
-
-```sh
-yarn
+```bash
+git clone https://github.com/smitvalture/react-native-recaptcha-v3.git
+cd react-native-recaptcha-v3
+yarn install
 ```
 
-> Since the project relies on Yarn workspaces, you cannot use [`npm`](https://github.com/npm/cli) for development.
+This project uses Yarn 3 (Berry). The `.yarnrc.yml` pins the version; if you have Corepack enabled (`corepack enable`), the right Yarn will be picked up automatically.
 
-The [example app](/example/) demonstrates usage of the library. You need to run it to test any changes you make.
+## Scripts
 
-It is configured to use the local version of the library, so any changes you make to the library's source code will be reflected in the example app. Changes to the library's JavaScript code will be reflected in the example app without a rebuild, but native code changes will require a rebuild of the example app.
+| Script | What it does |
+|--------|-------------|
+| `yarn lint` | Run ESLint over `src/` |
+| `yarn typecheck` | Run `tsc` in `--noEmit` mode |
+| `yarn test` | Run the Jest test suite |
+| `yarn test:ci` | Jest with coverage and `--ci` (matches what CI runs) |
+| `yarn prepare` | Build the library to `lib/` via `react-native-builder-bob` |
+| `yarn pack:local` | Clean build + `npm pack` to produce a local `.tgz` for testing in another project |
+| `yarn release` | Bump version, tag, push, and publish via `release-it` (maintainers only) |
 
-If you want to use Android Studio or XCode to edit the native code, you can open the `example/android` or `example/ios` directories respectively in those editors. To edit the Objective-C or Swift files, open `example/ios/ReactNativeRecaptchaV3Example.xcworkspace` in XCode and find the source files at `Pods > Development Pods > @valture/react-native-recaptcha-v3`.
+## Project layout
 
-To edit the Java or Kotlin files, open `example/android` in Android studio and find the source files at `valture-react-native-recaptcha-v3` under `Android`.
+```
+src/
+  index.tsx              — the component
+  __tests__/
+    helpers.ts           — shared test utilities (mock WebView accessors)
+    smoke.test.tsx       — basic render smoke tests
+    regressions.test.tsx — guards for known historical bugs
+    lifecycle.test.tsx   — public API behavior tests
 
-You can use various commands from the root directory to work with the project.
+jest.config.js           — Jest configuration
+jest.setup.js            — Controllable WebView mock (jest.mock)
+babel.config.js          — Env-aware: bob preset for builds, RN preset for tests
+tsconfig.json            — Strict TypeScript config; excludes __tests__ from emit
+tsconfig.build.json      — Used by bob for declaration emit
 
-To start the packager:
-
-```sh
-yarn example start
+.github/workflows/ci.yml — Lint · typecheck · test · build, Node 20 + 22
 ```
 
-To run the example app on Android:
+## Testing the component
 
-```sh
-yarn example android
-```
+The WebView is mocked in [`jest.setup.js`](./jest.setup.js). Tests drive the component through the same lifecycle a real WebView would — `onLoadStart` → `onLoadEnd` → simulated `onMessage('READY')` → `getToken()` → simulated `onMessage('VERIFY')` — using helpers from [`src/__tests__/helpers.ts`](./src/__tests__/helpers.ts).
 
-To run the example app on iOS:
+When fixing a bug, prefer adding a test that reproduces it under `src/__tests__/regressions.test.tsx`. When adding a feature, add behavioral tests under `lifecycle.test.tsx`.
 
-```sh
-yarn example ios
-```
+## Code style
 
-Make sure your code passes TypeScript and ESLint. Run the following to verify:
+- ESLint + Prettier — run `yarn lint` and fix any reported issues.
+- TypeScript — `strict` mode is on; no `any` in new code.
+- React hooks — exhaustive-deps not currently enforced; mention it in PR review if relevant.
 
-```sh
-yarn typecheck
-yarn lint
-```
+## Commit messages
 
-To fix formatting errors, run the following:
+Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) — this is what drives the automated changelog and semver bumps via `release-it`:
 
-```sh
-yarn lint --fix
-```
+| Prefix | When to use | Version bump |
+|--------|-------------|--------------|
+| `fix:` | bug fixes | patch |
+| `feat:` | new features | minor |
+| `feat!:` or `BREAKING CHANGE:` in body | breaking changes | major |
+| `refactor:` | code refactor with no behavior change | none |
+| `docs:` | documentation only | none |
+| `test:` | tests only | none |
+| `chore:` | tooling, deps, ci | none |
+| `ci:` | CI workflow changes | none |
 
-Remember to add tests for your change if possible. Run the unit tests by:
+## Pull requests
 
-```sh
-yarn test
-```
+1. Branch from `main`. Use a descriptive name (`fix/onloadend-double-fire`, `feat/abort-signal`, etc).
+2. Run `yarn lint && yarn typecheck && yarn test && yarn prepare` locally before pushing.
+3. Open a PR against `main`. CI runs lint + typecheck + tests + build on Node 20 and 22.
+4. Keep PRs focused — one logical change per PR is much easier to review than a bundle.
+5. If your change affects the public API, update the README and add tests.
 
-### Commit message convention
+For larger architectural changes, open an Issue first to discuss the approach before writing code.
 
-We follow the [conventional commits specification](https://www.conventionalcommits.org/en) for our commit messages:
+## Publishing (maintainers only)
 
-- `fix`: bug fixes, e.g. fix crash due to deprecated method.
-- `feat`: new features, e.g. add new method to the module.
-- `refactor`: code refactor, e.g. migrate from class components to hooks.
-- `docs`: changes into documentation, e.g. add usage example for the module..
-- `test`: adding or updating tests, e.g. add integration tests using detox.
-- `chore`: tooling changes, e.g. change CI config.
-
-Our pre-commit hooks verify that your commit message matches this format when committing.
-
-### Linting and tests
-
-[ESLint](https://eslint.org/), [Prettier](https://prettier.io/), [TypeScript](https://www.typescriptlang.org/)
-
-We use [TypeScript](https://www.typescriptlang.org/) for type checking, [ESLint](https://eslint.org/) with [Prettier](https://prettier.io/) for linting and formatting the code, and [Jest](https://jestjs.io/) for testing.
-
-Our pre-commit hooks verify that the linter and tests pass when committing.
-
-### Publishing to npm
-
-We use [release-it](https://github.com/release-it/release-it) to make it easier to publish new versions. It handles common tasks like bumping version based on semver, creating tags and releases etc.
-
-To publish new versions, run the following:
-
-```sh
+```bash
 yarn release
 ```
 
-### Scripts
+`release-it` will:
+1. Read recent commits, infer the version bump from Conventional Commit prefixes
+2. Generate a `CHANGELOG.md` entry
+3. Create a git tag, push to `origin`, publish to npm, and create a GitHub release
 
-The `package.json` file contains various scripts for common tasks:
-
-- `yarn`: setup project by installing dependencies.
-- `yarn typecheck`: type-check files with TypeScript.
-- `yarn lint`: lint files with ESLint.
-- `yarn test`: run unit tests with Jest.
-- `yarn example start`: start the Metro server for the example app.
-- `yarn example android`: run the example app on Android.
-- `yarn example ios`: run the example app on iOS.
-
-### Sending a pull request
-
-> **Working on your first pull request?** You can learn how from this _free_ series: [How to Contribute to an Open Source Project on GitHub](https://app.egghead.io/playlists/how-to-contribute-to-an-open-source-project-on-github).
-
-When you're sending a pull request:
-
-- Prefer small pull requests focused on one change.
-- Verify that linters and tests are passing.
-- Review the documentation to make sure it looks good.
-- Follow the pull request template when opening a pull request.
-- For pull requests that change the API or implementation, discuss with maintainers first by opening an issue.
+Make sure your local `main` is up to date with `origin/main` and CI is green before releasing.

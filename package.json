@@ -1,7 +1,7 @@
 {
   "name": "@valture/react-native-recaptcha-v3",
   "version": "2.4.0",
-  "description": "React Native component for integrating Google reCAPTCHA v3, providing seamless bot protection for mobile applications.",
+  "description": "React Native component for Google reCAPTCHA v3 (score-based, invisible). TypeScript-first, ref-based API, AbortSignal support, reCAPTCHA Enterprise.",
   "main": "./lib/commonjs/index.js",
   "types": "./lib/typescript/commonjs/index.d.ts",
   "exports": {
@@ -30,10 +30,23 @@
   "keywords": [
     "react-native",
     "recaptcha",
+    "recaptcha-v3",
+    "google-recaptcha",
     "google",
     "v3",
+    "score-based",
+    "invisible",
+    "captcha",
+    "enterprise",
+    "abort-signal",
+    "typescript",
     "security",
-    "verification"
+    "verification",
+    "bot-protection",
+    "antibot",
+    "spam",
+    "ios",
+    "android"
   ],
   "repository": {
     "type": "git",
@@ -46,7 +59,11 @@
   },
   "homepage": "https://github.com/smitvalture/react-native-recaptcha-v3#readme",
   "publishConfig": {
-    "registry": "https://registry.npmjs.org/"
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18"
   },
   "devDependencies": {
     "@react-native-community/cli": "15.0.1",

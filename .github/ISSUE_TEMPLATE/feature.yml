@@ -1,0 +1,39 @@
+name: Feature request
+description: Suggest a new feature, prop, or API addition.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the suggestion. For larger ideas (new endpoints, alternative renderers, major API changes), please open an issue first to discuss before submitting a PR.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Describe the use case, not the implementation. Why is the current API insufficient?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed API or behavior
+      description: |
+        Sketch the API. Code examples are great. Be honest about trade-offs.
+      render: tsx
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches you've thought about, or workarounds you're using today.
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope check
+      options:
+        - label: This is for **reCAPTCHA v3 score-based** (this package's scope), not v2 challenge / hCaptcha / a native turbo-module.

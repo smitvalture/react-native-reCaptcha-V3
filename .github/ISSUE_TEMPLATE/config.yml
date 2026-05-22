@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/smitvalture/react-native-recaptcha-v3/blob/main/SECURITY.md
+    about: Please follow the responsible-disclosure process in SECURITY.md rather than opening a public issue.
+  - name: Looking for v2 (challenge-based) reCAPTCHA?
+    url: https://github.com/douglasjunior/react-native-recaptcha-that-works
+    about: This package is for v3 score-based only. For "I'm not a robot" / modal challenges, use react-native-recaptcha-that-works.
+  - name: Looking for hCaptcha?
+    url: https://www.npmjs.com/package/@hcaptcha/react-native-hcaptcha
+    about: Different captcha provider; this package only integrates Google reCAPTCHA.
