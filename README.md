@@ -13,6 +13,8 @@ A lightweight React Native component for seamless integration of Google reCAPTCH
 - **Auto-Recovery**: Automatically handles reset and retry when reCAPTCHA is not ready.
 - **Network Error Detection**: Comprehensive offline/network error detection with immediate feedback.
 - **Custom Actions**: Supports custom action names for fine-grained security policies.
+- **AbortSignal Support**: Cancel in-flight token requests with the standard `AbortSignal` API.
+- **reCAPTCHA Enterprise**: Opt-in support for the Enterprise endpoint.
 - **WebView-Based**: Leverages `react-native-webview` for reliable reCAPTCHA rendering.
 - **TypeScript Support**: Fully typed for better developer experience.
 - **Debug Mode**: Optional test mode for detailed logging during development.
@@ -140,28 +142,31 @@ export default App;
 
 ### Props
 
-| Prop                     | Type                                | Required | Default    | Description                                                                 |
-|--------------------------|-------------------------------------|----------|------------|-----------------------------------------------------------------------------|
-| `siteKey`                | `string`                            | Yes      |            | Google reCAPTCHA v3 Site Key.                                               |
-| `baseUrl`                | `string`                            | Yes      |            | Registered domain for reCAPTCHA (e.g., `https://api.mydomain.com`).         |
-| `action`                 | `string`                            | No       | `'submit'` | Default action name for reCAPTCHA requests.                                 |
-| `onVerify`               | `(token: string) => void`           | No       |            | Callback triggered on successful token generation.                          |
-| `onError`                | `(error: string) => void`           | No       |            | Callback triggered on reCAPTCHA errors.                                     |
-| `onLoadStart`            | `() => void`                        | No       |            | Callback triggered when WebView starts loading.                             |
-| `onLoadEnd`               | `() => void`                        | No       |            | Callback triggered when WebView finishes loading.                           |
-| `style`                  | `ViewStyle`                         | No       |            | Styles for the underlying `WebView`.                                        |
-| `containerStyle`         | `ViewStyle`                         | No       |            | Styles for the container wrapping the `WebView`.                            |
-| `initializationTimeout`  | `number`                            | No       | `30000`     | Timeout in milliseconds for reCAPTCHA initialization (default: 30s).        |
-| `tokenRequestTimeout`    | `number`                            | No       | `15000`     | Timeout in milliseconds for token requests (default: 15s).                  |
-| `testMode`               | `boolean`                           | No       | `false`     | Enable debug logging for troubleshooting.                                   |
+| Prop                     | Type                                          | Required | Default    | Description                                                                 |
+|--------------------------|-----------------------------------------------|----------|------------|-----------------------------------------------------------------------------|
+| `siteKey`                | `string`                                      | Yes      |            | Google reCAPTCHA v3 Site Key.                                               |
+| `baseUrl`                | `string`                                      | Yes      |            | Registered domain for reCAPTCHA (e.g., `https://api.mydomain.com`).         |
+| `action`                 | `string`                                      | No       | `'submit'` | Default action name for reCAPTCHA requests.                                 |
+| `onVerify`               | `(token: string, action: string) => void`     | No       |            | Callback triggered on successful token generation. Receives the resolved action so you can route tokens when running multiple actions through one component. |
+| `onError`                | `(error: string) => void`                     | No       |            | Callback triggered on reCAPTCHA errors.                                     |
+| `onLoadStart`            | `() => void`                                  | No       |            | Callback triggered when the WebView starts loading.                         |
+| `onLoadEnd`              | `() => void`                                  | No       |            | Callback triggered once per load cycle when the WebView finishes loading.   |
+| `style`                  | `ViewStyle`                                   | No       |            | Styles for the underlying `WebView`.                                        |
+| `containerStyle`         | `ViewStyle`                                   | No       |            | Styles for the container wrapping the `WebView`.                            |
+| `initializationTimeout`  | `number`                                      | No       | `30000`    | Timeout in milliseconds for reCAPTCHA initialization (default: 30s).        |
+| `tokenRequestTimeout`    | `number`                                      | No       | `15000`    | Timeout in milliseconds for token requests (default: 15s).                  |
+| `testMode`               | `boolean`                                     | No       | `false`    | Enable debug logging for troubleshooting.                                   |
+| `useEnterprise`          | `boolean`                                     | No       | `false`    | Use reCAPTCHA Enterprise (`grecaptcha.enterprise.execute`) instead of standard v3. |
+| `originWhitelist`        | `readonly string[]`                           | No       | `[google + baseUrl]` | Origins the WebView is allowed to navigate to. Pass `['*']` to opt out. |
+| `mixedContentMode`       | `'never' \| 'always' \| 'compatibility'`      | No       | `'never'`  | Android WebView mixed-content policy. `'never'` blocks HTTP-in-HTTPS content. |
 
 ### Methods
 
-| Method     | Signature                                    | Description                                                       |
-|------------|----------------------------------------------|-------------------------------------------------------------------|
-| `getToken` | `(action?: string) => Promise<string>`      | Retrieves a reCAPTCHA token. Automatically handles reset and readiness checks. Rejects on network errors or timeouts. |
-| `isReady`  | `() => boolean`                              | Returns `true` if reCAPTCHA is ready and no errors occurred.    |
-| `reset`    | `() => Promise<void>`                       | Resets the component and reloads the WebView. Returns a Promise that resolves when reset is complete. |
+| Method     | Signature                                                                 | Description                                                       |
+|------------|---------------------------------------------------------------------------|-------------------------------------------------------------------|
+| `getToken` | `(action?: string, options?: { signal?: AbortSignal }) => Promise<string>` | Retrieves a reCAPTCHA token. Pass `options.signal` to cancel an in-flight request; the promise rejects with `'Token request was aborted.'`. |
+| `isReady`  | `() => boolean`                                                           | Returns `true` if reCAPTCHA is ready and no errors occurred.    |
+| `reset`    | `() => Promise<void>`                                                     | Resets the component and reloads the WebView. In-flight token requests are rejected with `'Token request cancelled: reCAPTCHA was reset.'` before the reload begins. |
 
 **Example**:
 
@@ -190,6 +195,31 @@ const handleReset = async () => {
   await recaptchaRef.current?.reset();
   console.log('reCAPTCHA reset complete');
 };
+
+// Cancel an in-flight request when the user navigates away
+const handleNavigateAway = async () => {
+  const controller = new AbortController();
+  const tokenPromise = recaptchaRef.current?.getToken('checkout', {
+    signal: controller.signal,
+  });
+
+  // ... user navigates ...
+  controller.abort();
+
+  try {
+    await tokenPromise;
+  } catch (err) {
+    // err.message === 'Token request was aborted.'
+  }
+};
+
+// reCAPTCHA Enterprise
+<ReCaptcha
+  ref={recaptchaRef}
+  siteKey={ENTERPRISE_SITE_KEY}
+  baseUrl={BASE_URL}
+  useEnterprise
+/>;
 ```
 
 ## 🛠 How It Works
