@@ -50,18 +50,16 @@
     "@react-native-community/cli": "15.0.1",
     "@release-it/conventional-changelog": "^9.0.3",
     "@types/react": "^18.2.44",
-    "@types/react-native": "^0.72.8",
     "@typescript-eslint/eslint-plugin": "^8.18.0",
     "@typescript-eslint/parser": "^8.18.0",
     "del-cli": "^6.0.0",
     "eslint": "^9.17.0",
     "eslint-config-prettier": "^9.0.0",
-    "eslint-plugin-prettier": "^5.0.1",
     "prettier": "^3.0.3",
     "react": "18.3.1",
     "react-native": "0.76.3",
     "react-native-builder-bob": "^0.33.3",
-    "react-native-webview": "^13.12.4",
+    "react-native-webview": "^13.16.1",
     "release-it": "^17.10.0",
     "typescript": "^5.7.2"
   },
@@ -87,28 +85,6 @@
       }
     }
   },
-  "eslintConfig": {
-    "root": true,
-    "extends": [
-      "@react-native",
-      "prettier"
-    ],
-    "rules": {
-      "react/react-in-jsx-scope": "off",
-      "prettier/prettier": [
-        "error",
-        {
-          "singleQuote": true,
-          "tabWidth": 2,
-          "trailingComma": "es5"
-        }
-      ]
-    }
-  },
-  "eslintIgnore": [
-    "node_modules/",
-    "lib/"
-  ],
   "prettier": {
     "singleQuote": true,
     "tabWidth": 2,
